@@ -1,7 +1,6 @@
-from sqlalchemy import Column, Integer, String, Text, ForeignKey, Float 
+from sqlalchemy import Column, Integer, String, Text, ForeignKey, Float, DateTime
 from sqlalchemy.orm import relationship
-from sqlalchemy.dialects.postgresql import ARRAY # Se for usar PostgreSQL, ou ajuste para SQLite JSON
-from sqlalchemy import JSON # Para SQLite, se a versão do SQLAlchemy suportar JSON ou Text para JSON string
+from sqlalchemy.sql import func 
 
 from database import Base
 
@@ -31,6 +30,8 @@ class Aluno(Base):
     academic_score = Column(Float, default=0.0)
 
     matriculas = relationship("Matricula", back_populates="aluno")
+    historico_xp_pontos = relationship("HistoricoXPPonto", back_populates="aluno")
+
 
 class Curso(Base):
     __tablename__ = "cursos"
@@ -43,3 +44,20 @@ class Curso(Base):
     points_on_completion = Column(Float, default=0.0)
 
     matriculas = relationship("Matricula", back_populates="curso")
+
+
+# >>> ADICIONE ESTA NOVA CLASSE HistoricoXPPonto ABAIXO <<<
+class HistoricoXPPonto(Base):
+    __tablename__ = "historico_xp_pontos"
+
+    id = Column(Integer, primary_key=True, index=True)
+    aluno_id = Column(Integer, ForeignKey("alunos.id"), nullable=False)
+    tipo_transacao = Column(String, nullable=False) # Ex: "ganho_xp_quest", "penalizacao_xp", "ganho_pontos_academicos", "ganho_xp_manual"
+    valor_xp_alterado = Column(Integer, default=0) # Valor de XP ganho ou deduzido
+    valor_pontos_alterado = Column(Float, default=0.0) # Valor de Pontos Totais ou Academicos alterado
+    motivo = Column(Text, nullable=True) # Descrição do motivo (ex: "Conclusão da Quest XYZ", "Penalidade por...")
+    data_hora = Column(DateTime, default=func.now()) # Data e hora da transação
+    referencia_entidade = Column(String, nullable=True) # Ex: "matricula", "curso", "manual", "guilda"
+    referencia_id = Column(Integer, nullable=True) # ID da entidade referenciada (matricula_id, curso_id, etc.)
+
+    aluno = relationship("Aluno", back_populates="historico_xp_pontos")

@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 from typing import List, Optional
+from datetime import datetime 
 
 class Matricula(BaseModel):
     aluno_id: int
@@ -62,3 +63,17 @@ class BulkMatriculaCreate(BaseModel):
 
 class QuestCompletionPoints(BaseModel): 
     quest_code: str
+
+class HistoricoXPPontoSchema(BaseModel):
+    id: int
+    aluno_id: int
+    tipo_transacao: str
+    valor_xp_alterado: Optional[int] = 0
+    valor_pontos_alterado: Optional[float] = 0.0
+    motivo: Optional[str] = None
+    data_hora: datetime
+    referencia_entidade: Optional[str] = None
+    referencia_id: Optional[int] = None
+
+    class Config:
+        from_attributes = True

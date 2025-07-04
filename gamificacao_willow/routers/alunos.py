@@ -4,9 +4,8 @@ from sqlalchemy import func
 from typing import List, Dict, Union
 import json
 
-from schemas import Aluno, AlunoUpdate, GuildLeaderboardEntry, QuestCompletionPoints
-from models import Aluno as ModelAluno
-from models import Curso as ModelCurso
+from schemas import Aluno, AlunoUpdate, GuildLeaderboardEntry, QuestCompletionPoints 
+from models import Aluno as ModelAluno, Curso as ModelCurso, HistoricoXPPonto 
 from database import get_db
 
 alunos_router = APIRouter()
@@ -273,15 +272,33 @@ def penalize_guild_xp(guild_name: str, xp_deduction: int, db: Session = Depends(
         )
 
     updated_alunos_response = []
+    historico_registros = [] # Lista para coletar os registros de histórico
+
     for aluno in db_alunos_na_guilda:
+        xp_antes = aluno.xp # Opcional: para logar o valor exato deduzido
         aluno.xp -= xp_deduction
         if aluno.xp < 0:
             aluno.xp = 0
         aluno.level = (aluno.xp // 100) + 1
 
         db.add(aluno)
+        
+        # Preparar registro de histórico
+        historico_registros.append(HistoricoXPPonto(
+            aluno_id=aluno.id,
+            tipo_transacao="penalizacao_xp",
+            valor_xp_alterado=-xp_deduction, # Armazenar como valor negativo
+            valor_pontos_alterado=0.0,
+            motivo=f"Penalidade de XP para a guilda '{guild_name}'",
+            referencia_entidade="guilda",
+            referencia_id=None # Ou um ID de guilda se você tiver uma tabela de guildas
+        ))
 
-    db.commit()
+    db.commit() # Commit das alterações nos alunos
+
+    # Adicionar todos os registros de histórico de uma vez
+    db.add_all(historico_registros)
+    db.commit() # Commit dos registros de histórico
 
     for aluno in db_alunos_na_guilda:
         db.refresh(aluno)

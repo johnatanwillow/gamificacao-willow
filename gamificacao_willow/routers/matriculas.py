@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List, Dict, Union
-from schemas import Matricula, BulkMatriculaCreate
-from models import Matricula as ModelMatricula, Aluno as ModelAluno, Curso as ModelCurso
+from schemas import Matricula, BulkMatriculaCreate # Importe seu schema de Matricula
+from models import Matricula as ModelMatricula, Aluno as ModelAluno, Curso as ModelCurso, HistoricoXPPonto # Importe o novo modelo HistoricoXPPonto
 from database import get_db
 
-from routers.alunos import _check_and_award_level_badges
+from routers.alunos import _check_and_award_level_badges 
 
 matriculas_router = APIRouter()
 
@@ -85,15 +85,52 @@ def complete_matricula(matricula_id: int, score: int, db: Session = Depends(get_
     
     aluno = db.query(ModelAluno).filter(ModelAluno.id == db_matricula.aluno_id).first()
     curso = db.query(ModelCurso).filter(ModelCurso.id == db_matricula.curso_id).first()
+    
+    xp_ganho = 0
+    pontos_totais_ganhos = 0
+    pontos_academicos_ganhos = 0
+
     if aluno and curso:
-        aluno.xp += curso.xp_on_completion
-        aluno.total_points += score
+        xp_ganho = curso.xp_on_completion
+        pontos_totais_ganhos = score
+        pontos_academicos_ganhos = curso.points_on_completion
+
+        aluno.xp += xp_ganho
+        aluno.total_points += pontos_totais_ganhos
+        aluno.academic_score += pontos_academicos_ganhos # Garante que o academic_score seja atualizado aqui
         aluno.level = (aluno.xp // 100) + 1
         db.add(aluno)
 
     db.commit()
     db.refresh(db_matricula)
     
+    if aluno and curso:
+        historico_xp = HistoricoXPPonto(
+            aluno_id=aluno.id,
+            tipo_transacao="ganho_xp_quest",
+            valor_xp_alterado=xp_ganho,
+            valor_pontos_alterado=pontos_totais_ganhos,
+            motivo=f"Conclusão da Quest '{curso.nome}' ({curso.codigo}) com score {score}",
+            referencia_entidade="matricula",
+            referencia_id=db_matricula.id
+        )
+        db.add(historico_xp)
+
+        # Se os pontos acadêmicos forem registrados separadamente no histórico
+        if pontos_academicos_ganhos > 0:
+            historico_pontos_academicos = HistoricoXPPonto(
+                aluno_id=aluno.id,
+                tipo_transacao="ganho_pontos_academicos_quest",
+                valor_xp_alterado=0, # Não altera XP neste tipo de transação
+                valor_pontos_alterado=pontos_academicos_ganhos,
+                motivo=f"Pontos Acadêmicos pela Quest '{curso.nome}' ({curso.codigo})",
+                referencia_entidade="curso", # Referencia o curso para pontos acadêmicos
+                referencia_id=curso.id
+            )
+            db.add(historico_pontos_academicos)
+
+    db.commit() # Commit dos registros de histórico
+
     if aluno:
         _check_and_award_level_badges(aluno, db)
         db.commit()
