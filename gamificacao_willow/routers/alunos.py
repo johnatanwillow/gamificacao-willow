@@ -1,12 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from sqlalchemy import func
-from typing import List, Dict, Union
+from sqlalchemy import func # Import func
+from typing import List, Dict, Union # Ensure Union is imported
 import json
 
-from schemas import Aluno, AlunoUpdate, GuildLeaderboardEntry, QuestCompletionPoints 
+from schemas import Aluno, AlunoUpdate, GuildLeaderboardEntry, QuestCompletionPoints
 from models import Aluno as ModelAluno
-from models import Curso as ModelCurso 
+from models import Curso as ModelCurso
 from database import get_db
 
 alunos_router = APIRouter()
@@ -245,3 +245,45 @@ def read_alunos_by_guild(guild_name: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Nenhum aluno encontrado na guilda '{guild_name}'.") 
 
     return [_load_badges_for_response(aluno) for aluno in db_alunos]
+
+@alunos_router.post("/guilds/{guild_name}/penalize_xp", response_model=List[Aluno])
+def penalize_guild_xp(guild_name: str, xp_deduction: int, db: Session = Depends(get_db)):
+    """
+    Penaliza todos os alunos de uma guilda específica, deduzindo XP.
+    O xp_deduction deve ser um valor positivo, que será subtraído.
+    """
+    if xp_deduction <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="O valor de dedução de XP deve ser um número positivo."
+        )
+
+    db_alunos_na_guilda = db.query(ModelAluno).filter(ModelAluno.guilda == guild_name).all()
+
+    if not db_alunos_na_guilda:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Nenhum aluno encontrado na guilda '{guild_name}' para aplicar a penalidade."
+        )
+
+    updated_alunos = []
+    for aluno in db_alunos_na_guilda:
+        aluno.xp -= xp_deduction
+        if aluno.xp < 0:
+            aluno.xp = 0
+        aluno.level = (aluno.xp // 100) + 1 
+
+        db.add(aluno) 
+
+    db.commit() 
+    
+    for aluno in db_alunos_na_guilda:
+        db.refresh(aluno)
+        
+        _check_and_award_level_badges(aluno, db)
+        db.refresh(aluno) 
+        updated_alunos.append(_load_badges_for_response(aluno)) 
+
+    db.commit()
+        
+    return updated_alunos
