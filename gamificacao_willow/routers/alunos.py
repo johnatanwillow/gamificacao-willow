@@ -4,9 +4,9 @@ from sqlalchemy import func
 from typing import List, Dict, Union
 import json
 
-from schemas import Aluno, AlunoUpdate, GuildLeaderboardEntry, QuestCompletionPoints 
+from schemas import Aluno, AlunoUpdate, GuildLeaderboardEntry, QuestCompletionPoints
 from models import Aluno as ModelAluno
-from models import Curso as ModelCurso 
+from models import Curso as ModelCurso
 from database import get_db
 
 alunos_router = APIRouter()
@@ -20,7 +20,7 @@ BADGE_TIERS = {
     200: "Explorador Bronze",
     300: "Desbravador Prata",
     400: "Garimpeiro Ouro",
-    500: "Alma de Platina",   
+    500: "Alma de Platina",
     600: "Arqueólogo de Jaspe",
     700: "Conquistador de Safira",
     800: "Conquistador de Esmeralda",
@@ -36,9 +36,9 @@ def _load_badges_for_response(db_aluno_obj: ModelAluno) -> Aluno:
         try:
             response_aluno.badges = json.loads(db_aluno_obj.badges)
         except json.JSONDecodeError:
-            response_aluno.badges = [] 
+            response_aluno.badges = []
     else:
-        response_aluno.badges = [] 
+        response_aluno.badges = []
     return response_aluno
 
 def _award_badge_if_new(db_aluno: ModelAluno, badge_name: str, db: Session):
@@ -51,7 +51,7 @@ def _award_badge_if_new(db_aluno: ModelAluno, badge_name: str, db: Session):
     if badge_name not in current_badges:
         current_badges.append(badge_name)
         db_aluno.badges = json.dumps(current_badges)
-        db.add(db_aluno) 
+        db.add(db_aluno)
         return True
     return False
 
@@ -62,25 +62,25 @@ def _check_and_award_level_badges(db_aluno: ModelAluno, db: Session):
     Ela garante que a lista de badges do aluno corresponda exatamente aos tiers de XP alcançados.
     """
     current_xp = db_aluno.xp
-    
+
     expected_badges = []
-  
+
     sorted_tiers = sorted(BADGE_TIERS.items(), key=lambda item: item[0])
 
     for xp_threshold, badge_name in sorted_tiers:
         if current_xp >= xp_threshold:
             expected_badges.append(badge_name)
         else:
-            break 
-            
+            break
+
     current_stored_badges = json.loads(db_aluno.badges) if db_aluno.badges else []
 
     if set(current_stored_badges) != set(expected_badges):
         db_aluno.badges = json.dumps(expected_badges)
         db.add(db_aluno)
-       
-        return True 
-    return False 
+
+        return True
+    return False
 
 @alunos_router.get("/alunos", response_model=List[Aluno])
 def read_alunos(db: Session = Depends(get_db)):
@@ -161,7 +161,7 @@ def delete_aluno(aluno_id: int, db: Session = Depends(get_db)):
     db.commit()
     return aluno_deletado
 
-@alunos_router.get("/alunos/nome/{nome_aluno}", response_model=Union[Aluno, List[Aluno]]) 
+@alunos_router.get("/alunos/nome/{nome_aluno}", response_model=Union[Aluno, List[Aluno]])
 def read_aluno_por_nome(nome_aluno: str, db: Session = Depends(get_db)):
     """
     Busca alunos pelo nome (parcial ou completo).
@@ -169,14 +169,14 @@ def read_aluno_por_nome(nome_aluno: str, db: Session = Depends(get_db)):
     db_alunos = db.query(ModelAluno).filter(ModelAluno.nome.ilike(f"%{nome_aluno}%")).all()
 
     if not db_alunos:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Nenhum aluno encontrado com esse nome") 
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Nenhum aluno encontrado com esse nome")
 
     if len(db_alunos) == 1:
         return _load_badges_for_response(db_alunos[0])
 
     return [_load_badges_for_response(aluno) for aluno in db_alunos]
 
-@alunos_router.post("/alunos/{aluno_id}/add_quest_academic_points", response_model=Aluno) 
+@alunos_router.post("/alunos/{aluno_id}/add_quest_academic_points", response_model=Aluno)
 def add_quest_academic_points(aluno_id: int, quest_completion_data: QuestCompletionPoints, db: Session = Depends(get_db)):
     """
     Adiciona pontos acadêmicos a um aluno com base na conclusão de uma quest.
@@ -206,9 +206,9 @@ def award_badge_to_aluno(aluno_id: int, badge_name: str, db: Session = Depends(g
         raise HTTPException(status_code=404, detail="Aluno não encontrado")
 
     if _award_badge_if_new(db_aluno, badge_name, db):
-        db.commit() 
+        db.commit()
         db.refresh(db_aluno)
-    
+
     return _load_badges_for_response(db_aluno)
 
 @alunos_router.get("/leaderboard", response_model=List[Aluno])
@@ -217,7 +217,7 @@ def get_leaderboard(db: Session = Depends(get_db), limit: int = 10):
     Retorna um leaderboard dos alunos, classificados por XP.
     """
     leaderboard = db.query(ModelAluno).order_by(ModelAluno.xp.desc()).limit(limit).all()
-    
+
     return [_load_badges_for_response(aluno) for aluno in leaderboard]
 
 @alunos_router.get("/guilds/leaderboard", response_model=List[GuildLeaderboardEntry])
@@ -236,7 +236,7 @@ def get_guild_leaderboard(db: Session = Depends(get_db)):
     ]
 
     if not guild_scores_filtered:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Nenhuma guilda com XP registrada.") 
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Nenhuma guilda com XP registrada.")
 
     return guild_scores_filtered
 
@@ -248,7 +248,7 @@ def read_alunos_by_guild(guild_name: str, db: Session = Depends(get_db)):
     db_alunos = db.query(ModelAluno).filter(ModelAluno.guilda == guild_name).order_by(ModelAluno.xp.desc()).all()
 
     if not db_alunos:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Nenhum aluno encontrado na guilda '{guild_name}'.") 
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Nenhum aluno encontrado na guilda '{guild_name}'.")
 
     return [_load_badges_for_response(aluno) for aluno in db_alunos]
 
@@ -275,19 +275,37 @@ def penalize_guild_xp(guild_name: str, xp_deduction: int, db: Session = Depends(
     updated_alunos_response = []
     for aluno in db_alunos_na_guilda:
         aluno.xp -= xp_deduction
-        if aluno.xp < 0: 
+        if aluno.xp < 0:
             aluno.xp = 0
-        aluno.level = (aluno.xp // 100) + 1 
+        aluno.level = (aluno.xp // 100) + 1
 
-        db.add(aluno) 
+        db.add(aluno)
 
-    db.commit() 
-    
+    db.commit()
+
     for aluno in db_alunos_na_guilda:
-        db.refresh(aluno) 
+        db.refresh(aluno)
         if _check_and_award_level_badges(aluno, db):
             db.commit()
-            db.refresh(aluno) 
-        updated_alunos_response.append(_load_badges_for_response(aluno)) 
-        
+            db.refresh(aluno)
+        updated_alunos_response.append(_load_badges_for_response(aluno))
+
     return updated_alunos_response
+
+@alunos_router.get("/alunos/level/{level}", response_model=List[Aluno])
+def read_alunos_by_level(level: int, db: Session = Depends(get_db)):
+    """
+    Retorna uma lista de todos os alunos de um nível específico, ordenados por XP.
+    """
+    if level <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="O nível deve ser um número positivo."
+        )
+
+    db_alunos = db.query(ModelAluno).filter(ModelAluno.level == level).order_by(ModelAluno.xp.desc()).all()
+
+    if not db_alunos:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Nenhum aluno encontrado no nível '{level}'.")
+
+    return [_load_badges_for_response(aluno) for aluno in db_alunos]
