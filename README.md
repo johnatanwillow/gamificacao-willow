@@ -1,4 +1,4 @@
-# gamificacao-willow# Projeto de Gamificação para Aulas de Inglês - Prof. Johnatan Willow
+# Projeto de Gamificação para Aulas de Inglês - Prof. Johnatan Willow
 
 ![Banner Placeholder](https://via.placeholder.com/800x200?text=Willow+-+Gamification+for+Learning)
 
