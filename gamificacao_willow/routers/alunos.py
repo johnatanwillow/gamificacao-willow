@@ -1,12 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from sqlalchemy import func # Import func
-from typing import List, Dict, Union # Ensure Union is imported
+from sqlalchemy import func
+from typing import List, Dict, Union
 import json
 
-from schemas import Aluno, AlunoUpdate, GuildLeaderboardEntry, QuestCompletionPoints
+from schemas import Aluno, AlunoUpdate, GuildLeaderboardEntry, QuestCompletionPoints 
 from models import Aluno as ModelAluno
-from models import Curso as ModelCurso
+from models import Curso as ModelCurso 
 from database import get_db
 
 alunos_router = APIRouter()
@@ -57,22 +57,30 @@ def _award_badge_if_new(db_aluno: ModelAluno, badge_name: str, db: Session):
 
 def _check_and_award_level_badges(db_aluno: ModelAluno, db: Session):
     """
-    Verifica o XP atual do aluno e concede badges de tier automaticamente.
+    Verifica o XP atual do aluno e gerencia a concessão/remoção de badges de tier automaticamente.
     Esta função deve ser chamada APÓS o XP e o nível do aluno terem sido atualizados.
-    Ela garante que apenas o badge de maior tier aplicável que o aluno ainda não possui seja adicionado.
+    Ela garante que a lista de badges do aluno corresponda exatamente aos tiers de XP alcançados.
     """
     current_xp = db_aluno.xp
-    awarded_any_new_badge = False
-   
-    sorted_tiers = sorted(BADGE_TIERS.items(), key=lambda item: item[0], reverse=True)
+    
+    expected_badges = []
+  
+    sorted_tiers = sorted(BADGE_TIERS.items(), key=lambda item: item[0])
 
     for xp_threshold, badge_name in sorted_tiers:
         if current_xp >= xp_threshold:
-            if _award_badge_if_new(db_aluno, badge_name, db):
-                awarded_any_new_badge = True
-                
+            expected_badges.append(badge_name)
+        else:
+            break 
             
-    return awarded_any_new_badge
+    current_stored_badges = json.loads(db_aluno.badges) if db_aluno.badges else []
+
+    if set(current_stored_badges) != set(expected_badges):
+        db_aluno.badges = json.dumps(expected_badges)
+        db.add(db_aluno)
+       
+        return True 
+    return False 
 
 @alunos_router.get("/alunos", response_model=List[Aluno])
 def read_alunos(db: Session = Depends(get_db)):
@@ -108,8 +116,9 @@ def create_aluno(aluno: Aluno, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(db_aluno)
 
-    _check_and_award_level_badges(db_aluno, db)
-    db.refresh(db_aluno)
+    if _check_and_award_level_badges(db_aluno, db):
+        db.commit()
+        db.refresh(db_aluno)
 
     return _load_badges_for_response(db_aluno)
 
@@ -128,16 +137,13 @@ def update_aluno(aluno_id: int, aluno: AlunoUpdate, db: Session = Depends(get_db
                 xp_updated = True
             setattr(db_aluno, key, value)
 
-    if xp_updated and db_aluno.xp is not None:
-        db_aluno.level = (db_aluno.xp // 100) + 1
-
     db.commit()
     db.refresh(db_aluno)
 
     if xp_updated:
-        _check_and_award_level_badges(db_aluno, db)
-        db.commit()
-        db.refresh(db_aluno)
+        if _check_and_award_level_badges(db_aluno, db):
+            db.commit()
+            db.refresh(db_aluno)
     return _load_badges_for_response(db_aluno)
 
 @alunos_router.delete("/alunos/{aluno_id}", response_model=Aluno)
@@ -199,9 +205,9 @@ def award_badge_to_aluno(aluno_id: int, badge_name: str, db: Session = Depends(g
     if db_aluno is None:
         raise HTTPException(status_code=404, detail="Aluno não encontrado")
 
-    _award_badge_if_new(db_aluno, badge_name, db)
-    db.commit() 
-    db.refresh(db_aluno)
+    if _award_badge_if_new(db_aluno, badge_name, db):
+        db.commit() 
+        db.refresh(db_aluno)
     
     return _load_badges_for_response(db_aluno)
 
@@ -266,10 +272,10 @@ def penalize_guild_xp(guild_name: str, xp_deduction: int, db: Session = Depends(
             detail=f"Nenhum aluno encontrado na guilda '{guild_name}' para aplicar a penalidade."
         )
 
-    updated_alunos = []
+    updated_alunos_response = []
     for aluno in db_alunos_na_guilda:
         aluno.xp -= xp_deduction
-        if aluno.xp < 0:
+        if aluno.xp < 0: 
             aluno.xp = 0
         aluno.level = (aluno.xp // 100) + 1 
 
@@ -278,12 +284,10 @@ def penalize_guild_xp(guild_name: str, xp_deduction: int, db: Session = Depends(
     db.commit() 
     
     for aluno in db_alunos_na_guilda:
-        db.refresh(aluno)
-        
-        _check_and_award_level_badges(aluno, db)
         db.refresh(aluno) 
-        updated_alunos.append(_load_badges_for_response(aluno)) 
-
-    db.commit()
+        if _check_and_award_level_badges(aluno, db):
+            db.commit()
+            db.refresh(aluno) 
+        updated_alunos_response.append(_load_badges_for_response(aluno)) 
         
-    return updated_alunos
+    return updated_alunos_response
