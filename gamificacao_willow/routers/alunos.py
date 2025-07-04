@@ -14,15 +14,18 @@ alunos_router = APIRouter()
 # --- Definição dos Tiers de Badges ---
 # Mapeia os níveis de XP necessários para cada badge de tier.
 # O sistema concederá o badge cujo XP mínimo foi atingido ou superado.
-# A ordem dos itens nesta lista não é estritamente necessária se a verificação for feita do maior para o menor,
-# mas é bom ter uma ordem clara. Usei chaves no dicionário como thresholds de XP.
 # O badge será concedido quando o XP do aluno for MAIOR OU IGUAL ao threshold.
 BADGE_TIERS = {
-    100: "Explorador Prata",
-    200: "Desbravador Ouro",
-    300: "Conquistador Diamante",
-    400: "Alma de Platina",    
-    500: "Mestre Supremo",
+    100: "Explorador Iniciante",
+    200: "Explorador Bronze",
+    300: "Desbravador Prata",
+    400: "Garimpeiro Ouro",
+    500: "Alma de Platina",   
+    600: "Arqueólogo de Jaspe",
+    700: "Conquistador de Safira",
+    800: "Conquistador de Esmeralda",
+    900: "Conquistador de Diamante",
+    1000: "Mestre das Gemas",
     # Adicione mais tiers conforme necessário:
 }
 
