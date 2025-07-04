@@ -1,18 +1,30 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status # Adicionado 'status' para consistência
 from sqlalchemy.orm import Session
-from sqlalchemy import func # Importar func para funções de agregação (sum)
+from sqlalchemy import func
 from typing import List, Dict, Union
-import json # Para lidar com a serialização/desserialização de JSON para badges
+import json
 
-# Importar os schemas atualizados
 from schemas import Aluno, AlunoUpdate, GuildLeaderboardEntry
-# Importar o modelo Aluno atualizado
 from models import Aluno as ModelAluno
 from database import get_db
 
 alunos_router = APIRouter()
 
-# Helper para converter badges de JSON string para lista (para respostas da API)
+# --- Definição dos Tiers de Badges ---
+# Mapeia os níveis de XP necessários para cada badge de tier.
+# O sistema concederá o badge cujo XP mínimo foi atingido ou superado.
+# A ordem dos itens nesta lista não é estritamente necessária se a verificação for feita do maior para o menor,
+# mas é bom ter uma ordem clara. Usei chaves no dicionário como thresholds de XP.
+# O badge será concedido quando o XP do aluno for MAIOR OU IGUAL ao threshold.
+BADGE_TIERS = {
+    100: "Explorador Prata",
+    200: "Desbravador Ouro",
+    300: "Conquistador Diamante",
+    400: "Mestre Supremo",
+    # Adicione mais tiers conforme necessário:
+    # 500: "Lenda Mítica",
+}
+
 def _load_badges_for_response(db_aluno_obj: ModelAluno) -> Aluno:
     """Carrega os badges do objeto ModelAluno e converte para o formato do schema Aluno."""
     response_aluno = Aluno.from_orm(db_aluno_obj)
@@ -20,11 +32,43 @@ def _load_badges_for_response(db_aluno_obj: ModelAluno) -> Aluno:
         try:
             response_aluno.badges = json.loads(db_aluno_obj.badges)
         except json.JSONDecodeError:
-            response_aluno.badges = [] # Lidar com JSON malformado
+            response_aluno.badges = [] 
     else:
-        response_aluno.badges = [] # Garantir que seja sempre uma lista
+        response_aluno.badges = [] 
     return response_aluno
 
+def _award_badge_if_new(db_aluno: ModelAluno, badge_name: str, db: Session):
+    """
+    Função auxiliar para adicionar um badge ao aluno se ele ainda não o possuir.
+    Atualiza o campo 'badges' no db_aluno e adiciona para persistência.
+    Retorna True se um novo badge foi concedido, False caso contrário.
+    """
+    current_badges = json.loads(db_aluno.badges) if db_aluno.badges else []
+    if badge_name not in current_badges:
+        current_badges.append(badge_name)
+        db_aluno.badges = json.dumps(current_badges)
+        db.add(db_aluno) 
+        return True
+    return False
+
+def _check_and_award_level_badges(db_aluno: ModelAluno, db: Session):
+    """
+    Verifica o XP atual do aluno e concede badges de tier automaticamente.
+    Esta função deve ser chamada APÓS o XP e o nível do aluno terem sido atualizados.
+    Ela garante que apenas o badge de maior tier aplicável que o aluno ainda não possui seja adicionado.
+    """
+    current_xp = db_aluno.xp
+    awarded_any_new_badge = False
+   
+    sorted_tiers = sorted(BADGE_TIERS.items(), key=lambda item: item[0], reverse=True)
+
+    for xp_threshold, badge_name in sorted_tiers:
+        if current_xp >= xp_threshold:
+            if _award_badge_if_new(db_aluno, badge_name, db):
+                awarded_any_new_badge = True
+                
+            
+    return awarded_any_new_badge
 
 @alunos_router.get("/alunos", response_model=List[Aluno])
 def read_alunos(db: Session = Depends(get_db)):
@@ -38,95 +82,73 @@ def read_alunos(db: Session = Depends(get_db)):
 def read_aluno(aluno_id: int, db: Session = Depends(get_db)):
     """
     Retorna os detalhes de um aluno específico com base no ID fornecido, incluindo seus dados de gamificação.
-
-    Args:
-        aluno_id: O ID do aluno.
-
-    Raises:
-        HTTPException: Se o aluno não for encontrado.
     """
     db_aluno = db.query(ModelAluno).filter(ModelAluno.id == aluno_id).first()
     if db_aluno is None:
         raise HTTPException(status_code=404, detail="Aluno não encontrado")
     return _load_badges_for_response(db_aluno)
 
-@alunos_router.post("/alunos", response_model=Aluno)
+@alunos_router.post("/alunos", response_model=Aluno, status_code=status.HTTP_201_CREATED) 
 def create_aluno(aluno: Aluno, db: Session = Depends(get_db)):
     """
     Cria um novo aluno com os dados fornecidos, incluindo guilda e atributos de gamificação iniciais.
-
-    Args:
-        aluno: Dados do aluno a ser criado (nome, guilda, etc.).
-
-    Returns:
-        Aluno: O aluno criado.
-    """ 
-    # Certifique-se de que o campo badges seja salvo como JSON string se presente no input
+    """
     aluno_data = aluno.dict(exclude={"id"})
     if "badges" in aluno_data and aluno_data["badges"] is not None:
         aluno_data["badges"] = json.dumps(aluno_data["badges"])
+    else: 
+        aluno_data["badges"] = json.dumps([])
     
     db_aluno = ModelAluno(**aluno_data) 
     db.add(db_aluno)
-    db.commit()
+    db.commit() 
     db.refresh(db_aluno)
+    
+    _check_and_award_level_badges(db_aluno, db)
+    db.refresh(db_aluno) 
+    
     return _load_badges_for_response(db_aluno)
-
 
 @alunos_router.put("/alunos/{aluno_id}", response_model=Aluno)
 def update_aluno(aluno_id: int, aluno: AlunoUpdate, db: Session = Depends(get_db)):
     """
     Atualiza os dados de um aluno existente, incluindo seus atributos de gamificação.
-
-    Args:
-        aluno_id: O ID do aluno a ser atualizado.
-        aluno: Os novos dados do aluno (nome, guilda, xp, level, total_points, badges).
-
-    Raises:
-        HTTPException: 404 - Aluno não encontrado.
-
-    Returns:
-        Aluno: O aluno atualizado.
     """
     db_aluno = db.query(ModelAluno).filter(ModelAluno.id == aluno_id).first()
     if db_aluno is None:
         raise HTTPException(status_code=404, detail="Aluno não encontrado")
 
+    xp_updated = False
     for key, value in aluno.dict(exclude_unset=True).items():
         if key == "badges":
-            # Converte a lista de strings para uma string JSON antes de salvar
             setattr(db_aluno, key, json.dumps(value))
         else:
+            if key == "xp": # Detecta se o XP foi atualizado
+                xp_updated = True
             setattr(db_aluno, key, value)
 
-    # Lógica para recalcular o nível se o XP foi atualizado
-    if aluno.xp is not None:
-        db_aluno.level = (db_aluno.xp // 100) + 1 # Exemplo: cada 100 XP é um novo nível
+    if xp_updated and db_aluno.xp is not None: # Verifica se XP foi realmente alterado
+        db_aluno.level = (db_aluno.xp // 100) + 1
 
-    db.commit()
-    db.refresh(db_aluno)
+    db.commit() # Salva as alterações iniciais
+    db.refresh(db_aluno) # Refresha para ter o estado mais atualizado, incluindo o nível recalculado
+    
+    if xp_updated:
+        _check_and_award_level_badges(db_aluno, db)
+        db.commit() 
+        db.refresh(db_aluno) 
     return _load_badges_for_response(db_aluno)
-
 
 @alunos_router.delete("/alunos/{aluno_id}", response_model=Aluno)
 def delete_aluno(aluno_id: int, db: Session = Depends(get_db)):
     """
     Exclui um aluno do sistema.
-
-    Args:
-        aluno_id: O ID do aluno a ser excluído.
-
-    Raises:
-        HTTPException: 404 - Aluno não encontrado.
-
-    Returns:
-        Aluno: O aluno excluído.
     """
     db_aluno = db.query(ModelAluno).filter(ModelAluno.id == aluno_id).first()
     if db_aluno is None:
         raise HTTPException(status_code=404, detail="Aluno não encontrado")
 
-    aluno_deletado = _load_badges_for_response(db_aluno) # Carrega os badges antes de deletar
+    aluno_deletado = _load_badges_for_response(db_aluno)
 
     db.delete(db_aluno)
     db.commit()
@@ -136,104 +158,58 @@ def delete_aluno(aluno_id: int, db: Session = Depends(get_db)):
 def read_aluno_por_nome(nome_aluno: str, db: Session = Depends(get_db)):
     """
     Busca alunos pelo nome (parcial ou completo).
-    
-    Args:
-        nome_aluno: O nome (ou parte do nome) do aluno a ser buscado.
-    
-    Raises:
-        HTTPException: 404 - Nenhum aluno encontrado com esse nome.
-        
-    Returns:
-        Union[Aluno, List[Aluno]]: Um único objeto `Aluno` se houver apenas uma correspondência, 
-        ou uma lista de `Aluno` se houver várias correspondências.
     """
-    db_alunos = db.query(ModelAluno).filter(ModelAluno.nome.ilike(f"%{nome_aluno}%")).all() # ilike para case-insensitive
+    db_alunos = db.query(ModelAluno).filter(ModelAluno.nome.ilike(f"%{nome_aluno}%")).all()
 
     if not db_alunos:
-        raise HTTPException(status_code=404, detail="Nenhum aluno encontrado com esse nome")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Nenhum aluno encontrado com esse nome") 
 
-    if len(db_alunos) == 1:  # Retorna um único Aluno se houver apenas uma correspondência
+    if len(db_alunos) == 1:
         return _load_badges_for_response(db_alunos[0])
 
     return [_load_badges_for_response(aluno) for aluno in db_alunos]
-
-# @alunos_router.get("/alunos/email/{email_aluno}", response_model=Aluno)
-# def read_aluno_por_email(email_aluno: str, db: Session = Depends(get_db)):
-#     """
-#     Busca um aluno pelo email. (REMOVIDO: Campo 'email' não existe mais no modelo Aluno)
-#     """
-#     # Este endpoint foi removido ou deve ser ignorado, pois o campo 'email' não está mais no ModelAluno.
-#     # Se descomentado, causará erro.
-#     pass
-
-
-# --- NOVAS ROTAS DE GAMIFICAÇÃO ---
 
 @alunos_router.post("/alunos/{aluno_id}/add_xp", response_model=Aluno)
 def add_xp_to_aluno(aluno_id: int, xp_amount: int, db: Session = Depends(get_db)):
     """
     Adiciona pontos de experiência (XP) a um aluno e recalcula seu nível.
-
-    Args:
-        aluno_id: O ID do aluno.
-        xp_amount: A quantidade de XP a ser adicionada.
-
-    Raises:
-        HTTPException: 404 - Aluno não encontrado.
-
-    Returns:
-        Aluno: O aluno atualizado.
     """
     db_aluno = db.query(ModelAluno).filter(ModelAluno.id == aluno_id).first()
     if db_aluno is None:
         raise HTTPException(status_code=404, detail="Aluno não encontrado")
 
     db_aluno.xp += xp_amount
-    db_aluno.total_points += xp_amount # Se XP também contar como pontos totais
-    db_aluno.level = (db_aluno.xp // 100) + 1 # Exemplo: cada 100 XP é um novo nível
+    db_aluno.total_points += xp_amount
+    db_aluno.level = (db_aluno.xp // 100) + 1
 
     db.commit()
     db.refresh(db_aluno)
+    
+    _check_and_award_level_badges(db_aluno, db)
+    db.commit() 
+    db.refresh(db_aluno)     
     return _load_badges_for_response(db_aluno)
 
 @alunos_router.post("/alunos/{aluno_id}/award_badge", response_model=Aluno)
 def award_badge_to_aluno(aluno_id: int, badge_name: str, db: Session = Depends(get_db)):
     """
     Concede um distintivo (badge) a um aluno, se ele ainda não o possuir.
-
-    Args:
-        aluno_id: O ID do aluno.
-        badge_name: O nome do distintivo a ser concedido.
-
-    Raises:
-        HTTPException: 404 - Aluno não encontrado.
-
-    Returns:
-        Aluno: O aluno atualizado com o novo distintivo.
+    Este é um método manual/direto de concessão de badge, separado da evolução por nível.
     """
     db_aluno = db.query(ModelAluno).filter(ModelAluno.id == aluno_id).first()
     if db_aluno is None:
         raise HTTPException(status_code=404, detail="Aluno não encontrado")
 
-    current_badges = json.loads(db_aluno.badges) if db_aluno.badges else []
-    if badge_name not in current_badges:
-        current_badges.append(badge_name)
-        db_aluno.badges = json.dumps(current_badges)
-        db.commit()
-        db.refresh(db_aluno)
-        
+    _award_badge_if_new(db_aluno, badge_name, db)
+    db.commit() 
+    db.refresh(db_aluno)
+    
     return _load_badges_for_response(db_aluno)
 
 @alunos_router.get("/leaderboard", response_model=List[Aluno])
 def get_leaderboard(db: Session = Depends(get_db), limit: int = 10):
     """
     Retorna um leaderboard dos alunos, classificados por XP.
-
-    Args:
-        limit: O número máximo de alunos a serem retornados no leaderboard.
-
-    Returns:
-        List[Aluno]: Uma lista dos alunos no leaderboard.
     """
     leaderboard = db.query(ModelAluno).order_by(ModelAluno.xp.desc()).limit(limit).all()
     
@@ -243,23 +219,19 @@ def get_leaderboard(db: Session = Depends(get_db), limit: int = 10):
 def get_guild_leaderboard(db: Session = Depends(get_db)):
     """
     Retorna um leaderboard das guildas, classificadas pela soma total de XP de seus membros.
-
-    Returns:
-        List[GuildLeaderboardEntry]: Uma lista de guildas e suas pontuações totais de XP.
     """
     guild_scores = db.query(
         ModelAluno.guilda,
         func.sum(ModelAluno.xp).label("total_xp")
     ).group_by(ModelAluno.guilda).order_by(func.sum(ModelAluno.xp).desc()).all()
 
-    # Filtra entradas onde a guilda é None (alunos sem uma guilda atribuída)
     guild_scores_filtered = [
         {"guilda": entry.guilda, "total_xp": entry.total_xp}
         for entry in guild_scores if entry.guilda is not None
     ]
 
     if not guild_scores_filtered:
-        raise HTTPException(status_code=404, detail="Nenhuma guilda com XP registrada.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Nenhuma guilda com XP registrada.") 
 
     return guild_scores_filtered
 
@@ -267,19 +239,10 @@ def get_guild_leaderboard(db: Session = Depends(get_db)):
 def read_alunos_by_guild(guild_name: str, db: Session = Depends(get_db)):
     """
     Retorna uma lista de todos os alunos de uma guilda específica, ordenados por XP.
-
-    Args:
-        guild_name: O nome da guilda para filtrar os alunos.
-
-    Raises:
-        HTTPException: 404 - Nenhum aluno encontrado na guilda especificada.
-
-    Returns:
-        List[Aluno]: Uma lista dos alunos pertencentes à guilda.
     """
     db_alunos = db.query(ModelAluno).filter(ModelAluno.guilda == guild_name).order_by(ModelAluno.xp.desc()).all()
 
     if not db_alunos:
-        raise HTTPException(status_code=404, detail=f"Nenhum aluno encontrado na guilda '{guild_name}'.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Nenhum aluno encontrado na guilda '{guild_name}'.") 
 
     return [_load_badges_for_response(aluno) for aluno in db_alunos]

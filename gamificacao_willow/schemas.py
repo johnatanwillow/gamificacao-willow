@@ -53,3 +53,8 @@ Cursos = List[Curso]
 class GuildLeaderboardEntry(BaseModel):
     guilda: str
     total_xp: int
+
+# --- NOVO SCHEMA PARA MATRÍCULA EM MASSA ---
+class BulkMatriculaCreate(BaseModel):
+    curso_id: int
+    guild_name: str

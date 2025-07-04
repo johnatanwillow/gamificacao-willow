@@ -1,12 +1,12 @@
 
 # Projeto de Gamificação para Aulas de Inglês - Prof. Johnatan Willow
 
-Bem-vindo ao **Willow**, uma poderosa ferramenta baseada em FastAPI projetada para transformar suas aulas de inglês para jovens em uma experiência **gamificada**, **divertida** e **motivadora**!
+Bem-vindo ao **Willow**, uma poderosa ferramenta baseada em FastAPI projetada para transformar suas aulas para jovens em uma experiência **gamificada**, **divertida** e **motivadora**!
 
-O Willow funciona como a "espinha dorsal" do seu sistema de recompensas, permitindo que você:
+O Willow funciona como a "espinha dorsal" seu sistema de recompensas, permitindo que você, como professor:
 
 - **Gerencie Jogadores (Seus Alunos)**: Crie perfis detalhados para cada aluno, incluindo apelidos e guildas.
-- **Defina Quests e Níveis de Aprendizagem**: Crie "desafios" ou "módulos" de conteúdo de inglês com recompensas específicas.
+- **Defina Quests e Níveis de Aprendizagem**: Crie "desafios" ou "módulos" de conteúdo de inglês (ou conteúdos de outras disciplinas) com recompensas específicas.
 - **Rastreie o Progresso e Pontuação**: Monitore o desempenho de cada aluno em tempo real, registrando pontos de experiência (XP), níveis e distintivos (badges).
 - **Crie Leaderboards**: Exiba a classificação dos alunos (geral e por guilda!) para promover uma competição saudável e motivadora.
 
@@ -33,7 +33,7 @@ Para colocar o Willow para funcionar no seu computador, você precisará de:
 
 ### 1. Baixe o Projeto Willow:
 
-- Baixe o ZIP: [Download Willow](https://github.com/guilhermeonrails/imersao-devops/archive/refs/heads/main.zip)
+- [Download Willow](https://github.com/johnatanwillow/gamificacao-willow)
 - Descompacte o ZIP em uma pasta fácil (ex: `C:\MeusProjetos\Willow`)
 
 ### 2. Abra o Terminal (Prompt de Comando ou PowerShell)
@@ -64,7 +64,7 @@ source venv/bin/activate
 - **Windows (PowerShell):**
 
 ```bash
-venv\Scriptsctivate
+venv\Scripts\Activate
 ```
 
 > Você saberá que deu certo quando aparecer `(venv)` no início da linha do terminal.
