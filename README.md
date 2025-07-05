@@ -226,6 +226,7 @@ Permite renomear a guilda ou movê-la para uma turma diferente. Ao mover para um
     "total_points": 0,
     "academic_score": 0.0
   }
+```
 ---
 
 #### Deletar um Jogador (Aluno):
