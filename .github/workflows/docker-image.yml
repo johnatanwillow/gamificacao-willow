@@ -15,4 +15,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     - name: Build the Docker image
-      run: docker build . --file Dockerfile --tag my-image-name:$(date +%s)
+      # ALtere esta linha abaixo:
+      run: docker build ./gamificacao_willow --file ./gamificacao_willow/Dockerfile --tag my-image-name:$(date +%s)
+      # Ou, uma forma mais limpa, se o Dockerfile estiver diretamente na pasta `gamificacao_willow`:
+      # run: docker build ./gamificacao_willow --file Dockerfile --tag my-image-name:$(date +%s)
