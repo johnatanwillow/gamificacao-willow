@@ -27,6 +27,14 @@ class Turma(TurmaBase):
     class Config:
         from_attributes = True
 
+# NOVO SCHEMA: TurmaUpdate
+class TurmaUpdate(BaseModel):
+    nome: Optional[str] = None
+    ano: Optional[int] = None
+
+    class Config:
+        from_attributes = True
+
 class GuildaBase(BaseModel):
     nome: str
     turma_id: int # ID da Turma a qual esta Guilda pertence
@@ -36,8 +44,15 @@ class GuildaCreate(GuildaBase):
 
 class Guilda(GuildaBase):
     id: int
-    turma: Optional[TurmaBase] = None # Informações básicas da Turma
-    alunos: List["Aluno"] = [] # Lista de Alunos pertencentes a esta Guilda
+    turma: Optional[TurmaBase] = None 
+    alunos: List["Aluno"] = [] 
+
+    class Config:
+        from_attributes = True
+
+class GuildaUpdate(BaseModel):
+    nome: Optional[str] = None
+    turma_id: Optional[int] = None 
 
     class Config:
         from_attributes = True
@@ -45,7 +60,7 @@ class Guilda(GuildaBase):
 class Aluno(BaseModel):
     nome: str
     apelido: Optional[str] = None
-    guilda_id: Optional[int] = None # MODIFICADO: Agora é um ID para a Guilda
+    guilda_id: Optional[int] = None
     xp: Optional[int] = 0
     level: Optional[int] = 1
     total_points: Optional[int] = 0
@@ -93,11 +108,11 @@ class GuildLeaderboardEntry(BaseModel):
     total_xp: int
 
 class BulkMatriculaCreate(BaseModel):
-    atividade_id: int
+    curso_id: int
     guilda_id: int 
 
 class BulkMatriculaByTurmaCreate(BaseModel):
-    atividade_id: int
+    curso_id: int
     turma_id: int
 
 class XPDeductionRequest(BaseModel):

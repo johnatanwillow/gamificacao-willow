@@ -11,6 +11,9 @@ atividades_router = APIRouter()
 def read_atividades(db: Session = Depends(get_db)):
     """
     Retorna uma lista de todas as atividades (quests) disponíveis, incluindo informações de gamificação.
+
+    Returns:
+        List[Atividade]: Uma lista de objetos Atividade.
     """
     atividades = db.query(ModelAtividade).all()
     return [Atividade.from_orm(atividade) for atividade in atividades]
@@ -18,10 +21,10 @@ def read_atividades(db: Session = Depends(get_db)):
 @atividades_router.post("/atividades", response_model=Atividade, status_code=status.HTTP_201_CREATED)
 def create_atividade(atividade: Atividade, db: Session = Depends(get_db)):
     """
-    Cria uma nova atividade (quest) com seus atributos, incluindo XP e pontos de recompensa.
+    Cria uma nova atividade (quest) com seus atributos, incluindo XP e pontos de recompensa por conclusão.
 
     Args:
-        atividade: Dados da atividade a ser criada (incluindo xp_on_completion e points_on_completion).
+        atividade: Dados da atividade a ser criada (incluindo nome, codigo, descricao, xp_on_completion e points_on_completion).
 
     Returns:
         Atividade: A atividade criada.
@@ -36,16 +39,17 @@ def create_atividade(atividade: Atividade, db: Session = Depends(get_db)):
 def update_atividade(codigo_atividade: str, atividade: Atividade, db: Session = Depends(get_db)):
     """
     Atualiza os dados de uma atividade (quest) existente pelo seu código.
+    Permite atualizar o nome, descrição, XP e pontos de recompensa.
 
     Args:
         codigo_atividade: O código da atividade a ser atualizada.
-        atividade: Os novos dados da atividade (incluindo xp_on_completion e points_on_completion).
-
-    Raises:
-        HTTPException: 404 - Atividade não encontrada.
+        atividade: Os novos dados da atividade.
 
     Returns:
         Atividade: A atividade atualizada.
+
+    Raises:
+        HTTPException: 404 - Atividade não encontrada.
     """
     db_atividade = db.query(ModelAtividade).filter(ModelAtividade.codigo == codigo_atividade).first()
     if db_atividade is None:
@@ -62,6 +66,15 @@ def update_atividade(codigo_atividade: str, atividade: Atividade, db: Session = 
 def read_atividade_por_codigo(codigo_atividade: str, db: Session = Depends(get_db)):
     """
     Retorna os detalhes de uma atividade (quest) específica com base no código fornecido.
+
+    Args:
+        codigo_atividade: O código da atividade para buscar os detalhes.
+
+    Returns:
+        Atividade: O objeto Atividade correspondente ao código.
+
+    Raises:
+        HTTPException: 404 - Nenhuma atividade encontrada com o código fornecido.
     """
     db_atividade = db.query(ModelAtividade).filter(ModelAtividade.codigo == codigo_atividade).first()
     if db_atividade is None:
