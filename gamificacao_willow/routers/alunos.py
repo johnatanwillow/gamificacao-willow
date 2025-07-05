@@ -427,6 +427,8 @@ def update_aluno(aluno_id: int, aluno: AlunoUpdate, db: Session = Depends(get_db
     """
     Atualiza os dados de um aluno existente, com a possibilidade de registrar o motivo
     das alterações de XP e pontos no histórico.
+    Permite renomear o aluno, alterar o apelido ou movê-lo para uma guilda diferente.
+    Ao mover para uma nova guilda, caso esta guilda seja de outra turma, o aluno será implicitamente migrado para a turma associada a essa nova guilda. TODOS os alunos precisam estar inseridos numa guilda.
 
     Args:
         aluno_id: O ID do aluno a ser atualizado.
