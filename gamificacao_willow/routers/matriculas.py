@@ -5,16 +5,17 @@ from typing import List, Dict, Union
 # Importações atualizadas para usar os schemas com as novas estruturas
 from schemas import (
     Matricula,
-    BulkMatriculaCreate, # Este schema foi modificado para usar guilda_id
-    HistoricoXPPontoSchema # Mantido, se precisar criar registros aqui
+    BulkMatriculaCreate,
+    HistoricoXPPontoSchema,
+    BulkMatriculaByTurmaCreate 
 )
 from models import (
     Matricula as ModelMatricula,
     Aluno as ModelAluno,
-    Atividade as ModelAtividade, # MODIFICADO: Importar Atividade ao invés de Curso
-    HistoricoXPPonto, # Modelo do histórico
-    Guilda as ModelGuilda, # NOVO: Importar modelo da Guilda
-    Turma as ModelTurma # NOVO: Importar modelo da Turma
+    Atividade as ModelAtividade, 
+    HistoricoXPPonto,
+    Guilda as ModelGuilda,
+    Turma as ModelTurma 
 )
 from database import get_db
 
@@ -209,4 +210,48 @@ def create_bulk_matriculas_by_guild(bulk_data: BulkMatriculaCreate, db: Session 
     for matricula_obj in created_matriculas:
         pass # Apenas para refresh, mas o objeto já é um schema
 
+    return created_matriculas
+
+@matriculas_router.post("/matriculas/bulk-by-turma", response_model=List[Matricula], status_code=status.HTTP_201_CREATED)
+def create_bulk_matriculas_by_turma(bulk_data: BulkMatriculaByTurmaCreate, db: Session = Depends(get_db)):
+    db_curso = db.query(ModelCurso).filter(ModelCurso.id == bulk_data.curso_id).first()
+    if db_curso is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Curso com ID {bulk_data.curso_id} não encontrado.")
+
+    # Valida se a turma_id existe e carrega as guildas associadas
+    db_turma = db.query(ModelTurma).options(joinedload(ModelTurma.guildas).joinedload(ModelGuilda.alunos)).filter(ModelTurma.id == bulk_data.turma_id).first()
+    if not db_turma:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Turma com ID {bulk_data.turma_id} não encontrada.")
+    
+    if not db_turma.guildas:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Nenhuma guilda encontrada para a Turma com ID {bulk_data.turma_id}. Não é possível matricular alunos.")
+
+    all_alunos_in_turma = set()
+    for guilda in db_turma.guildas:
+        for aluno in guilda.alunos:
+            all_alunos_in_turma.add(aluno) # Adiciona alunos a um set para evitar duplicatas
+
+    if not all_alunos_in_turma:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Nenhum aluno encontrado nas guildas da Turma com ID {bulk_data.turma_id}.")
+
+    created_matriculas = []
+    for aluno in all_alunos_in_turma:
+        existing_matricula = db.query(ModelMatricula).filter(
+            ModelMatricula.aluno_id == aluno.id,
+            ModelMatricula.curso_id == bulk_data.curso_id
+        ).first()
+
+        if existing_matricula is None:
+            new_matricula = ModelMatricula(aluno_id=aluno.id, curso_id=bulk_data.curso_id)
+            db.add(new_matricula)
+            created_matriculas.append(Matricula.from_orm(new_matricula))
+        else:
+            print(f"Aluno {aluno.nome} (ID: {aluno.id}) já matriculado no curso '{db_curso.nome}'. Matrícula ignorada.")
+            created_matriculas.append(Matricula.from_orm(existing_matricula))
+
+    db.commit()
+    for matricula_obj in created_matriculas:
+        # Garante que os objetos sejam atualizados com os IDs após o commit
+        db.refresh(matricula_obj._sa_instance_state.obj) 
+    
     return created_matriculas
