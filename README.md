@@ -181,6 +181,7 @@ Com esta atualização, o gerenciamento das turmas, guildas e alunos ficou ainda
 ```
 ---   
 #### Atualizar uma Guilda Existente:
+
 **PUT /guildas/{guilda_id}**
 
 Permite renomear a guilda ou movê-la para uma turma diferente. Ao mover para uma nova turma, todos os alunos da guilda são implicitamente migrados.
