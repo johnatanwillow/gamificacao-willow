@@ -206,7 +206,7 @@ Permite renomear a guilda ou movê-la para uma turma diferente. Ao mover para um
 ```json
 {
   "nome": "Johnatan",
-  "apelido": "  
+  "apelido": "johnwill"  
   "guilda_id": 1
   "xp": 0,
   "total_points": 0,
@@ -220,7 +220,7 @@ Permite renomear a guilda ou movê-la para uma turma diferente. Ao mover para um
   ```json
   {
     "nome": "Johnatan",
-    "apelido": "  
+    "apelido": "johnwill"   
     "guilda_id": 1
     "xp": 0,
     "total_points": 0,
