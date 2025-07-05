@@ -93,11 +93,11 @@ class GuildLeaderboardEntry(BaseModel):
     total_xp: int
 
 class BulkMatriculaCreate(BaseModel):
-    curso_id: int
+    atividade_id: int
     guilda_id: int 
 
 class BulkMatriculaByTurmaCreate(BaseModel):
-    curso_id: int
+    atividade_id: int
     turma_id: int
 
 class XPDeductionRequest(BaseModel):

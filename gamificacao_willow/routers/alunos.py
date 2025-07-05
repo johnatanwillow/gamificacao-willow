@@ -109,6 +109,26 @@ def create_turma(turma: TurmaCreate, db: Session = Depends(get_db)):
 def read_turmas(db: Session = Depends(get_db)):
     turmas = db.query(ModelTurma).options(joinedload(ModelTurma.guildas)).all()
     return turmas
+@alunos_router.delete("/turmas/{turma_id}", response_model=Turma)
+def delete_turma(turma_id: int, db: Session = Depends(get_db)):
+    """
+    Deleta uma turma específica.
+    Não permite a deleção se existirem guildas associadas a esta turma.
+    """
+    db_turma = db.query(ModelTurma).filter(ModelTurma.id == turma_id).first() #
+    if db_turma is None:
+        raise HTTPException(status_code=404, detail="Turma não encontrada")
+    
+    # Verifica se existem guildas associadas
+    if db_turma.guildas: # Acessa o relacionamento 'guildas' definido no ModelTurma
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Não é possível deletar a Turma '{db_turma.nome}' (ID: {turma_id}) porque ela possui guildas associadas. Remova ou reasigne as guildas primeiro."
+        )
+
+    db.delete(db_turma)
+    db.commit()
+    return Turma.from_orm(db_turma)
 
 # NOVO ENDPOINT: Criar Guilda
 @alunos_router.post("/guildas", response_model=Guilda, status_code=status.HTTP_201_CREATED)
@@ -136,7 +156,29 @@ def read_guildas(db: Session = Depends(get_db)):
     guildas = db.query(ModelGuilda).options(joinedload(ModelGuilda.turma)).all()
     return guildas
 
-# MODIFICADO: read_alunos agora carrega guilda e turma
+# NOVO ENDPOINT: Deletar Guilda
+@alunos_router.delete("/guildas/{guilda_id}", response_model=Guilda)
+def delete_guilda(guilda_id: int, db: Session = Depends(get_db)):
+    """
+    Deleta uma guilda específica.
+    Não permite a deleção se existirem alunos associados a esta guilda.
+    """
+    db_guilda = db.query(ModelGuilda).filter(ModelGuilda.id == guilda_id).first() #
+    if db_guilda is None:
+        raise HTTPException(status_code=404, detail="Guilda não encontrada")
+
+    # Verifica se existem alunos associados
+    if db_guilda.alunos: # Acessa o relacionamento 'alunos' definido no ModelGuilda
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Não é possível deletar a Guilda '{db_guilda.nome}' (ID: {guilda_id}) porque ela possui alunos associados. Remova ou reasigne os alunos primeiro."
+        )
+
+    guilda_deletada = Guilda.from_orm(db_guilda) # Converte antes de deletar
+    db.delete(db_guilda)
+    db.commit()
+    return guilda_deletada
+
 @alunos_router.get("/alunos", response_model=List[Aluno])
 def read_alunos(db: Session = Depends(get_db)):
     """
@@ -146,7 +188,6 @@ def read_alunos(db: Session = Depends(get_db)):
     alunos = db.query(ModelAluno).options(joinedload(ModelAluno.guilda_obj).joinedload(ModelGuilda.turma)).all()
     return [_load_aluno_for_response(aluno) for aluno in alunos]
 
-# MODIFICADO: read_aluno agora carrega guilda e turma
 @alunos_router.get("/alunos/{aluno_id}", response_model=Aluno)
 def read_aluno(aluno_id: int, db: Session = Depends(get_db)):
     """
@@ -158,7 +199,6 @@ def read_aluno(aluno_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Aluno não encontrado")
     return _load_aluno_for_response(db_aluno)
 
-# MODIFICADO: create_aluno agora usa guilda_id
 @alunos_router.post("/alunos", response_model=Aluno, status_code=status.HTTP_201_CREATED)
 def create_aluno(aluno: Aluno, db: Session = Depends(get_db)):
     # Valida se a guilda_id existe
@@ -191,7 +231,6 @@ def create_aluno(aluno: Aluno, db: Session = Depends(get_db)):
 
     return _load_aluno_for_response(db_aluno)
 
-# MODIFICADO: update_aluno agora usa guilda_id
 @alunos_router.put("/alunos/{aluno_id}", response_model=Aluno)
 def update_aluno(aluno_id: int, aluno: AlunoUpdate, db: Session = Depends(get_db)):
     db_aluno = db.query(ModelAluno).options(joinedload(ModelAluno.guilda_obj).joinedload(ModelGuilda.turma)).filter(ModelAluno.id == aluno_id).first()

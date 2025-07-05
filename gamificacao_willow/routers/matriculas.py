@@ -25,19 +25,6 @@ from routers.alunos import _check_and_award_level_badges, _load_aluno_for_respon
 
 matriculas_router = APIRouter()
 
-@matriculas_router.post("/matriculas", response_model=Matricula, status_code=status.HTTP_201_CREATED)
-def create_matricula(matricula: Matricula, db: Session = Depends(get_db)):
-    db_aluno = db.query(ModelAluno).filter(ModelAluno.id == matricula.aluno_id).first()
-    db_atividade = db.query(ModelAtividade).filter(ModelAtividade.id == matricula.atividade_id).first() # MODIFICADO: db_atividade e matricula.atividade_id
-
-    if db_aluno is None or db_atividade is None: # MODIFICADO: Atividade não encontrada
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Aluno ou Atividade não encontrada") # MODIFICADO: Atividade não encontrada
-
-    db_matricula = ModelMatricula(**matricula.dict())
-    db.add(db_matricula)
-    db.commit()
-    db.refresh(db_matricula)
-    return Matricula.from_orm(db_matricula)
 
 
 @matriculas_router.get("/matriculas/aluno/{nome_aluno}", response_model=Dict[str, Union[str, List[str]]])
@@ -174,8 +161,97 @@ def complete_matricula(matricula_id: int, score: int, db: Session = Depends(get_
     
     return Matricula.from_orm(db_matricula)
 
+# NOVO ENDPOINT: Deletar Matrícula (Cancelar Atividade)
+@matriculas_router.delete("/matriculas/{matricula_id}", response_model=Matricula)
+def delete_matricula(matricula_id: int, db: Session = Depends(get_db)):
+    """
+    Deleta uma matrícula específica, cancelando a participação do aluno em uma atividade.
+    Se a matrícula estiver concluída, reverte o XP e os pontos ganhos pelo aluno
+    e registra a reversão no histórico.
+    """
+    # Carrega a matrícula com os objetos aluno e curso relacionados
+    db_matricula = db.query(ModelMatricula).options(joinedload(ModelMatricula.aluno), joinedload(ModelMatricula.curso)).filter(ModelMatricula.id == matricula_id).first()
+    if db_matricula is None:
+        raise HTTPException(status_code=404, detail="Matrícula não encontrada")
+    
+    aluno = db_matricula.aluno
+    curso = db_matricula.curso
+    historico_registros = [] # Para coletar registros de reversão
+
+    if db_matricula.status == "concluido" and aluno and curso:
+        # Valores a serem revertidos
+        xp_a_reverter = curso.xp_on_completion
+        pontos_totais_a_reverter = db_matricula.score_in_quest
+        pontos_academicos_a_reverter = curso.points_on_completion
+
+        # Subtrair XP e Pontos do aluno
+        aluno.xp -= xp_a_reverter
+        aluno.total_points -= pontos_totais_a_reverter
+        aluno.academic_score -= pontos_academicos_a_reverter
+
+        # Garantir que nenhum valor fique negativo
+        aluno.xp = max(0, aluno.xp)
+        aluno.total_points = max(0, aluno.total_points)
+        aluno.academic_score = max(0.0, aluno.academic_score) # Assumindo que academic_score pode ser 0.0
+
+        # Recalcular nível do aluno
+        aluno.level = (aluno.xp // 100) + 1
+
+        db.add(aluno) # Adicionar aluno para que as alterações sejam salvas
+
+        # Registrar reversões no histórico
+        if xp_a_reverter > 0:
+            historico_registros.append(
+                HistoricoXPPonto(
+                    aluno_id=aluno.id,
+                    tipo_transacao="reversao_xp_matricula",
+                    valor_xp_alterado=-xp_a_reverter, # Valor negativo para indicar reversão
+                    valor_pontos_alterado=0.0,
+                    motivo=f"Reversão de XP devido ao cancelamento da matrícula na Quest '{curso.nome}' ({curso.codigo})",
+                    referencia_entidade="matricula",
+                    referencia_id=db_matricula.id
+                )
+            )
+        if pontos_totais_a_reverter > 0:
+            historico_registros.append(
+                HistoricoXPPonto(
+                    aluno_id=aluno.id,
+                    tipo_transacao="reversao_pontos_totais_matricula",
+                    valor_xp_alterado=0,
+                    valor_pontos_alterado=float(-pontos_totais_a_reverter),
+                    motivo=f"Reversão de Pontos Totais devido ao cancelamento da matrícula na Quest '{curso.nome}' ({curso.codigo})",
+                    referencia_entidade="matricula",
+                    referencia_id=db_matricula.id
+                )
+            )
+        if pontos_academicos_a_reverter > 0:
+            historico_registros.append(
+                HistoricoXPPonto(
+                    aluno_id=aluno.id,
+                    tipo_transacao="reversao_pontos_academicos_matricula",
+                    valor_xp_alterado=0,
+                    valor_pontos_alterado=-pontos_academicos_a_reverter,
+                    motivo=f"Reversão de Pontos Acadêmicos devido ao cancelamento da matrícula na Quest '{curso.nome}' ({curso.codigo})",
+                    referencia_entidade="matricula",
+                    referencia_id=db_matricula.id
+                )
+            )
+        
+        db.add_all(historico_registros) # Adiciona todos os registros de reversão
+
+    # Deletar a matrícula
+    db.delete(db_matricula)
+    db.commit() # Salva todas as alterações (deleção da matrícula, atualização do aluno e registros de histórico)
+
+    # Verifica e concede/remove badges de nível após reversão de XP
+    if aluno and db_matricula.status == "concluido": # Só verifica se houve XP afetado
+        _check_and_award_level_badges(aluno, db)
+        db.commit()
+        db.refresh(aluno) # Recarrega o aluno para garantir que esteja atualizado
+
+    return Matricula.from_orm(db_matricula)
+
 @matriculas_router.post("/matriculas/bulk-by-guild", response_model=List[Matricula], status_code=status.HTTP_201_CREATED)
-# MODIFICADO: Agora usa guilda_id do schema BulkMatriculaCreate
 def create_bulk_matriculas_by_guild(bulk_data: BulkMatriculaCreate, db: Session = Depends(get_db)):
     db_atividade = db.query(ModelAtividade).filter(ModelAtividade.id == bulk_data.atividade_id).first() # MODIFICADO: db_atividade e bulk_data.atividade_id
     if db_atividade is None: # MODIFICADO: db_atividade
@@ -214,9 +290,9 @@ def create_bulk_matriculas_by_guild(bulk_data: BulkMatriculaCreate, db: Session 
 
 @matriculas_router.post("/matriculas/bulk-by-turma", response_model=List[Matricula], status_code=status.HTTP_201_CREATED)
 def create_bulk_matriculas_by_turma(bulk_data: BulkMatriculaByTurmaCreate, db: Session = Depends(get_db)):
-    db_curso = db.query(ModelCurso).filter(ModelCurso.id == bulk_data.curso_id).first()
-    if db_curso is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Curso com ID {bulk_data.curso_id} não encontrado.")
+    db_atividade = db.query(ModelAtividade).filter(ModelAtividade.id == bulk_data.atividade_id).first()
+    if db_atividade is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Atividade com ID {bulk_data.atividade_id} não encontrado.")
 
     # Valida se a turma_id existe e carrega as guildas associadas
     db_turma = db.query(ModelTurma).options(joinedload(ModelTurma.guildas).joinedload(ModelGuilda.alunos)).filter(ModelTurma.id == bulk_data.turma_id).first()
@@ -238,15 +314,15 @@ def create_bulk_matriculas_by_turma(bulk_data: BulkMatriculaByTurmaCreate, db: S
     for aluno in all_alunos_in_turma:
         existing_matricula = db.query(ModelMatricula).filter(
             ModelMatricula.aluno_id == aluno.id,
-            ModelMatricula.curso_id == bulk_data.curso_id
+            ModelMatricula.atividade_id == bulk_data.atividade_id
         ).first()
 
         if existing_matricula is None:
-            new_matricula = ModelMatricula(aluno_id=aluno.id, curso_id=bulk_data.curso_id)
+            new_matricula = ModelMatricula(aluno_id=aluno.id, atividade_id=bulk_data.atividade_id)
             db.add(new_matricula)
             created_matriculas.append(Matricula.from_orm(new_matricula))
         else:
-            print(f"Aluno {aluno.nome} (ID: {aluno.id}) já matriculado no curso '{db_curso.nome}'. Matrícula ignorada.")
+            print(f"Aluno {aluno.nome} (ID: {aluno.id}) já matriculado na atividade '{db_atividade.nome}'. Matrícula ignorada.")
             created_matriculas.append(Matricula.from_orm(existing_matricula))
 
     db.commit()
