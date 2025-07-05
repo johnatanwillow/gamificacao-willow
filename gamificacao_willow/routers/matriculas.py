@@ -156,9 +156,9 @@ def create_matricula(matricula: Matricula, db: Session = Depends(get_db)):
     return Matricula.from_orm(db_matricula)
 
 @matriculas_router.put("/matriculas/{matricula_id}/complete", response_model=Matricula)
-def complete_matricula(matricula_id: int, score: int, db: Session = Depends(get_db)):
+def atividade_completa(matricula_id: int, score: int, db: Session = Depends(get_db)):
     """
-    Marca uma matrícula como concluída, registra a pontuação do aluno na atividade,
+    Marca uma atividade como concluída, registra a pontuação do aluno na atividade,
     e atualiza o XP, pontos totais e pontos acadêmicos do aluno, além de verificar
     e conceder distintivos de nível.
 

@@ -19,7 +19,8 @@ from schemas import (
     TurmaUpdate, # Adicionado TurmaUpdate
     Guilda,
     GuildaCreate,
-    GuildaUpdate # Adicionado GuildaUpdate
+    GuildaUpdate, # Adicionado GuildaUpdate
+    BadgeAwardRequest # Novo schema para o motivo do badge
 )
 from models import (
     Aluno as ModelAluno,
@@ -599,18 +600,36 @@ def add_quest_academic_points(aluno_id: int, quest_completion_data: QuestComplet
     return _load_aluno_for_response(db_aluno)
 
 @alunos_router.post("/alunos/{aluno_id}/award_badge", response_model=Aluno)
-def award_badge_to_aluno(aluno_id: int, badge_name: str, db: Session = Depends(get_db)):
+def award_badge_to_aluno(aluno_id: int, badge_data: BadgeAwardRequest, db: Session = Depends(get_db)):
     """
-    Concede um distintivo (badge) a um aluno, se ele ainda não o possuir.
+    Concede um distintivo (badge) a um aluno, se ele ainda não o possuir, e registra o motivo.
     Este é um método manual/direto de concessão de badge, separado da evolução por nível.
     """
     db_aluno = db.query(ModelAluno).options(joinedload(ModelAluno.guilda_obj).joinedload(ModelGuilda.turma)).filter(ModelAluno.id == aluno_id).first()
     if db_aluno is None:
         raise HTTPException(status_code=404, detail="Aluno não encontrado")
 
+    badge_name = badge_data.badge_name
+    motivo = badge_data.motivo if badge_data.motivo else f"Concessão manual do distintivo '{badge_name}'"
+
     if _award_badge_if_new(db_aluno, badge_name, db):
+        # Registrar a concessão do badge no histórico
+        historico_registro = HistoricoXPPonto(
+            aluno_id=db_aluno.id,
+            tipo_transacao="concessao_badge_manual",
+            valor_xp_alterado=0, # Badges não alteram XP diretamente neste ponto
+            valor_pontos_alterado=0.0, # Badges não alteram pontos diretamente neste ponto
+            motivo=motivo,
+            referencia_entidade="badge", # Entidade de referência para o histórico
+            referencia_id=None # Não há um ID específico para badges, pode ser None ou outro identificador
+        )
+        db.add(historico_registro)
         db.commit()
         db.refresh(db_aluno)
+    else:
+        # Se o badge já existia, podemos retornar uma mensagem indicando isso (opcional)
+        # Por simplicidade, neste caso, apenas retornamos o aluno sem erro.
+        pass
 
     return _load_aluno_for_response(db_aluno)
 
@@ -978,7 +997,7 @@ def get_historico_turma_xp_pontos(turma_id: int, db: Session = Depends(get_db)):
         db.query(HistoricoXPPonto, ModelAluno, ModelGuilda, ModelTurma)
         .join(ModelAluno, HistoricoXPPonto.aluno_id == ModelAluno.id)
         .outerjoin(ModelGuilda, ModelAluno.guilda_id == ModelGuilda.id)
-        .outerjoin(ModelTurma, ModelGuilda.turma_id == ModelGuilda.turma_id) # Corrected typo: ModelGuilda.turma_id -> ModelTurma.id
+        .outerjoin(ModelTurma, ModelGuilda.turma_id == ModelTurma.id) # Corrected typo: ModelGuilda.turma_id -> ModelTurma.id
         .filter(HistoricoXPPonto.aluno_id.in_(aluno_ids_in_turma)) # Filtra pelos alunos da turma
         .order_by(HistoricoXPPonto.data_hora.asc())
         .all()

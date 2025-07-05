@@ -158,7 +158,11 @@ class HistoricoAlunoDetalhadoSchema(BaseModel):
 
     class Config:
         from_attributes = True
-        
+
+class BadgeAwardRequest(BaseModel):
+    badge_name: str
+    motivo: Optional[str] = None
+
 # Atualiza a referência forward para Turma no schema Guilda
 Guilda.model_rebuild()
 # Atualiza a referência forward para Guilda no schema Turma
