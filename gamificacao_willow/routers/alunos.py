@@ -132,27 +132,89 @@ def create_aluno(aluno: Aluno, db: Session = Depends(get_db)):
 
 @alunos_router.put("/alunos/{aluno_id}", response_model=Aluno)
 def update_aluno(aluno_id: int, aluno: AlunoUpdate, db: Session = Depends(get_db)):
-    db_aluno = db.query(ModelAluno).filter(ModelAluno.id == aluno_id).first()
+    db_aluno = db.query(ModelAluno).filter(ModelAluno.id == aluno_id).first() #
     if db_aluno is None:
         raise HTTPException(status_code=404, detail="Aluno não encontrado")
 
+    # Guardar os valores antigos antes da atualização para calcular a diferença
+    old_xp = db_aluno.xp
+    old_total_points = db_aluno.total_points
+    old_academic_score = db_aluno.academic_score
+
     xp_updated = False
+    historico_registros = [] # Lista para coletar novos registros de histórico
+
+    # Iterar sobre os campos fornecidos na atualização
     for key, value in aluno.dict(exclude_unset=True).items():
         if key == "badges":
             setattr(db_aluno, key, json.dumps(value))
+        elif key == "motivo":
+            # O motivo será usado para o histórico, não é um campo do ModelAluno
+            pass
         else:
             if key == "xp":
                 xp_updated = True
-            setattr(db_aluno, key, value)
+            setattr(db_aluno, key, value) #
 
-    db.commit()
-    db.refresh(db_aluno)
+    # Capturar o motivo da atualização (se fornecido)
+    motivo_alteracao = aluno.motivo if aluno.motivo else "Alteração manual via PUT /alunos/{aluno_id}"
+
+    # Registrar alterações de XP no histórico (se xp_updated for True)
+    if xp_updated:
+        xp_change = db_aluno.xp - old_xp
+        if xp_change != 0: # Registrar apenas se houve mudança real no XP
+            historico_registros.append(
+                HistoricoXPPonto( #
+                    aluno_id=db_aluno.id,
+                    tipo_transacao="ajuste_manual_xp",
+                    valor_xp_alterado=xp_change,
+                    valor_pontos_alterado=0.0,
+                    motivo=motivo_alteracao,
+                    referencia_entidade="aluno",
+                    referencia_id=db_aluno.id
+                )
+            )
+    
+    # Registrar alterações de total_points no histórico
+    if "total_points" in aluno.dict(exclude_unset=True):
+        if db_aluno.total_points != old_total_points:
+            points_change = db_aluno.total_points - old_total_points
+            historico_registros.append(
+                HistoricoXPPonto( #
+                    aluno_id=db_aluno.id,
+                    tipo_transacao="ajuste_manual_pontos_totais",
+                    valor_xp_alterado=0,
+                    valor_pontos_alterado=float(points_change), # Armazenar como float
+                    motivo=motivo_alteracao,
+                    referencia_entidade="aluno",
+                    referencia_id=db_aluno.id
+                )
+            )
+
+    if "academic_score" in aluno.dict(exclude_unset=True):
+        if db_aluno.academic_score != old_academic_score:
+            academic_score_change = db_aluno.academic_score - old_academic_score
+            historico_registros.append(
+                HistoricoXPPonto( #
+                    aluno_id=db_aluno.id,
+                    tipo_transacao="ajuste_manual_academic_score",
+                    valor_xp_alterado=0,
+                    valor_pontos_alterado=academic_score_change,
+                    motivo=motivo_alteracao,
+                    referencia_entidade="aluno",
+                    referencia_id=db_aluno.id
+                )
+            )
+
+    db.add_all(historico_registros) # Adicionar todos os registros de histórico coletados
+    db.commit() 
+    db.refresh(db_aluno) 
 
     if xp_updated:
-        if _check_and_award_level_badges(db_aluno, db):
+        if _check_and_award_level_badges(db_aluno, db): #
             db.commit()
             db.refresh(db_aluno)
-    return _load_badges_for_response(db_aluno)
+    return _load_badges_for_response(db_aluno) 
 
 @alunos_router.delete("/alunos/{aluno_id}", response_model=Aluno)
 def delete_aluno(aluno_id: int, db: Session = Depends(get_db)):

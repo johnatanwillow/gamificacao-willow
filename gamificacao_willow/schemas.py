@@ -36,7 +36,8 @@ class AlunoUpdate(BaseModel):
     level: Optional[int] = None
     total_points: Optional[int] = None
     badges: Optional[List[str]] = None
-    academic_score: Optional[float] = None 
+    academic_score: Optional[float] = None
+    motivo: Optional[str] = None  
 
     class Config:
         from_attributes = True
@@ -79,7 +80,7 @@ class HistoricoXPPontoSchema(BaseModel):
 
     class Config:
         from_attributes = True
-        
+
 class HistoricoAlunoDetalhadoSchema(BaseModel):
     id: int
     aluno_id: int
