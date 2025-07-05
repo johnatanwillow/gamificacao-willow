@@ -1,0 +1,18 @@
+services:
+  api:
+    # Constrói a imagem a partir do Dockerfile no diretório atual (.)
+    build: .
+    # Nome do container para fácil identificação
+    container_name: willow_api
+    # Mapeia a porta 8000 do host para a porta 8000 do container
+    ports:
+      - "8000:8000"
+    # Monta um volume para persistir os dados do banco de dados SQLite
+    # O arquivo 'escola.db' será salvo neste volume
+    volumes:
+      - .:db_data:/app
+    restart: unless-stopped
+
+volumes:
+  db_data:
+    name: gamificacao_willow_db_data
