@@ -4,14 +4,15 @@ from sqlalchemy import func
 from typing import List, Dict, Union
 import json
 
-# ESTE É O ÚNICO BLOCO DE IMPORTAÇÃO NECESSÁRIO E COMPLETO.
+
 from schemas import (
     Aluno,
     AlunoUpdate,
     GuildLeaderboardEntry,
     QuestCompletionPoints,
     XPDeductionRequest,
-    HistoricoXPPontoSchema
+    HistoricoXPPontoSchema,
+    HistoricoAlunoDetalhadoSchema 
 )
 from models import Aluno as ModelAluno, Curso as ModelCurso, HistoricoXPPonto 
 from database import get_db
@@ -385,21 +386,63 @@ def read_alunos_by_level(level: int, db: Session = Depends(get_db)):
 
     return [_load_badges_for_response(aluno) for aluno in db_alunos]
 
-@alunos_router.get("/alunos/{aluno_id}/historico_xp_pontos", response_model=List[HistoricoXPPontoSchema])
-def get_aluno_historico_xp_pontos(aluno_id: int, db: Session = Depends(get_db)):
+@alunos_router.get("/alunos/nome/{nome_aluno}/historico_xp_pontos", response_model=List[HistoricoAlunoDetalhadoSchema])
+def get_aluno_historico_xp_pontos_por_nome(nome_aluno: str, db: Session = Depends(get_db)):
     """
-    Retorna o histórico de todas as transações de XP e pontos de um aluno específico.
+    Retorna o histórico detalhado de todas as transações de XP e pontos de um aluno específico,
+    encontrado pelo nome (parcial ou completo).
+    Se múltiplos alunos forem encontrados com o mesmo nome, uma exceção será levantada.
     """
-    db_aluno = db.query(ModelAluno).filter(ModelAluno.id == aluno_id).first()
-    if db_aluno is None:
-        raise HTTPException(status_code=404, detail="Aluno não encontrado")
+    # Busca alunos que correspondem ao nome (case-insensitive e parcial)
+    db_alunos_matches = db.query(ModelAluno).filter(ModelAluno.nome.ilike(f"%{nome_aluno}%")).all() #
 
-    historico = db.query(HistoricoXPPonto).filter(HistoricoXPPonto.aluno_id == aluno_id).order_by(HistoricoXPPonto.data_hora.asc()).all()
+    if not db_alunos_matches:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Nenhum aluno encontrado com o nome '{nome_aluno}'."
+        )
+    
+    if len(db_alunos_matches) > 1:
+        # Se múltiplos alunos corresponderem, evite ambiguidade na recuperação do histórico
+        matched_names = [f"{aluno.nome} (ID: {aluno.id})" for aluno in db_alunos_matches]
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Múltiplos alunos encontrados com o nome '{nome_aluno}'. Por favor, use o ID do aluno para consultar o histórico: {', '.join(matched_names)}"
+        )
+            
+    db_aluno = db_alunos_matches[0]
+    aluno_id = db_aluno.id
 
-    if not historico:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Nenhum registro de histórico encontrado para o aluno com ID {aluno_id}.")
+    historico_com_aluno = (
+        db.query(HistoricoXPPonto, ModelAluno)
+        .join(ModelAluno, HistoricoXPPonto.aluno_id == ModelAluno.id) #
+        .filter(HistoricoXPPonto.aluno_id == aluno_id) #
+        .order_by(HistoricoXPPonto.data_hora.asc()) #
+        .all()
+    )
 
-    return [HistoricoXPPontoSchema.from_orm(registro) for registro in historico]
+    if not historico_com_aluno:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Nenhum registro de histórico encontrado para o aluno com nome '{nome_aluno}' (ID: {aluno_id}).")
+
+    # Mapeia os resultados da junção para o novo schema detalhado
+    response_list = []
+    for historico_registro, aluno_info in historico_com_aluno:
+        response_list.append(
+            HistoricoAlunoDetalhadoSchema( #
+                id=historico_registro.id,
+                aluno_id=historico_registro.aluno_id,
+                aluno_nome=aluno_info.nome,
+                aluno_apelido=aluno_info.apelido,
+                tipo_transacao=historico_registro.tipo_transacao,
+                valor_xp_alterado=historico_registro.valor_xp_alterado,
+                valor_pontos_alterado=historico_registro.valor_pontos_alterado,
+                motivo=historico_registro.motivo,
+                data_hora=historico_registro.data_hora,
+                referencia_entidade=historico_registro.referencia_entidade,
+                referencia_id=historico_registro.referencia_id
+            )
+        )
+    return response_list
 
 @alunos_router.post("/alunos/nome/{nome_aluno}/penalize_xp", response_model=Aluno)
 def penalize_aluno_xp_por_nome(nome_aluno: str, xp_data: XPDeductionRequest, db: Session = Depends(get_db)):

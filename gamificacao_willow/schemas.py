@@ -65,10 +65,26 @@ class QuestCompletionPoints(BaseModel):
     quest_code: str
 class XPDeductionRequest(BaseModel):
     xp_deduction: int
-    
+
 class HistoricoXPPontoSchema(BaseModel):
     id: int
     aluno_id: int
+    tipo_transacao: str
+    valor_xp_alterado: Optional[int] = 0
+    valor_pontos_alterado: Optional[float] = 0.0
+    motivo: Optional[str] = None
+    data_hora: datetime
+    referencia_entidade: Optional[str] = None
+    referencia_id: Optional[int] = None
+
+    class Config:
+        from_attributes = True
+        
+class HistoricoAlunoDetalhadoSchema(BaseModel):
+    id: int
+    aluno_id: int
+    aluno_nome: str # Novo campo
+    aluno_apelido: Optional[str] = None # Novo campo
     tipo_transacao: str
     valor_xp_alterado: Optional[int] = 0
     valor_pontos_alterado: Optional[float] = 0.0
