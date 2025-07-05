@@ -63,7 +63,9 @@ class BulkMatriculaCreate(BaseModel):
 
 class QuestCompletionPoints(BaseModel): 
     quest_code: str
-
+class XPDeductionRequest(BaseModel):
+    xp_deduction: int
+    
 class HistoricoXPPontoSchema(BaseModel):
     id: int
     aluno_id: int

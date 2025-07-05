@@ -4,7 +4,7 @@ from sqlalchemy import func
 from typing import List, Dict, Union
 import json
 
-from schemas import Aluno, AlunoUpdate, GuildLeaderboardEntry, QuestCompletionPoints 
+from schemas import Aluno, AlunoUpdate, GuildLeaderboardEntry, QuestCompletionPoints, XPDeductionRequest 
 from models import Aluno as ModelAluno, Curso as ModelCurso, HistoricoXPPonto 
 from database import get_db
 
@@ -308,6 +308,57 @@ def penalize_guild_xp(guild_name: str, xp_deduction: int, db: Session = Depends(
         updated_alunos_response.append(_load_badges_for_response(aluno))
 
     return updated_alunos_response
+
+@alunos_router.post("/alunos/{aluno_id}/penalize_xp", response_model=Aluno)
+def penalize_aluno_xp(aluno_id: int, xp_data: XPDeductionRequest, db: Session = Depends(get_db)):
+    """
+    Penaliza um aluno específico, deduzindo XP.
+    O xp_deduction deve ser um valor positivo, que será subtraído.
+    """
+    xp_deduction = xp_data.xp_deduction
+    
+    if xp_deduction <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="O valor de dedução de XP deve ser um número positivo."
+        )
+
+    db_aluno = db.query(ModelAluno).filter(ModelAluno.id == aluno_id).first()
+
+    if db_aluno is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Aluno com ID {aluno_id} não encontrado para aplicar a penalidade."
+        )
+
+    xp_antes = db_aluno.xp 
+    db_aluno.xp -= xp_deduction
+    if db_aluno.xp < 0:
+        db_aluno.xp = 0
+    db_aluno.level = (db_aluno.xp // 100) + 1 
+
+    db.add(db_aluno)
+    
+    historico_registro = HistoricoXPPonto(
+        aluno_id=db_aluno.id,
+        tipo_transacao="penalizacao_xp",
+        valor_xp_alterado=-xp_deduction, 
+        valor_pontos_alterado=0.0,
+        motivo=f"Penalidade de XP manual para o aluno",
+        referencia_entidade="aluno",
+        referencia_id=db_aluno.id
+    )
+    db.add(historico_registro)
+    
+    db.commit() 
+    db.refresh(db_aluno) 
+
+    if _check_and_award_level_badges(db_aluno, db):
+        db.commit()
+        db.refresh(db_aluno)
+            
+    return _load_badges_for_response(db_aluno) 
+
 
 @alunos_router.get("/alunos/level/{level}", response_model=List[Aluno])
 def read_alunos_by_level(level: int, db: Session = Depends(get_db)):
