@@ -217,7 +217,8 @@ Permite renomear a guilda ou movê-la para uma turma diferente. Ao mover para um
 
 #### Atualizar um Jogador (Aluno):
   **PUT /alunos/{aluno_id}**
-    {
+  ```json
+  {
     "nome": "Johnatan",
     "apelido": "  
     "guilda_id": 1
