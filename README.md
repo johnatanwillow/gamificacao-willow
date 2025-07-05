@@ -379,7 +379,7 @@ Retorna o histórico detalhado de todas as transações de XP e pontos de todos 
 Cenário Inicial:
 ```json
 {
-  "Aluno: "Alice" (ID: 101)"
+  "Aluno: "Alice" "(ID: 101)"
   "XP Atual: 180",
   "Nível Atual: 2 (pois 180 XP está entre 100 e 199 para o Nível 2)"
   "Pontos Totais: 200",
@@ -399,10 +399,10 @@ Cenário Inicial:
 
  - "Aluno Alice (ID 101) na Atividade (ID 201)",
 {
-  ""aluno_id": 101,
+  "aluno_id": "101,"
   "atividade_id": 90,
   "score_in_quest": 0.5,
-  "status": "concluido""
+  "status": "concluido"
 }
 ```
 **Ação do Professor (Chamada da API):**
@@ -410,10 +410,11 @@ Cenário Inicial:
 O professor avalia que Alice completou a atividade "Verbos Irregulares - Parte 1" com uma pontuação de 95. Ele então faz uma requisição PUT para o endpoint complete_matricula:
 
 **PUT /matriculas/3001/complete**
-
+```json
 {
   "score": 50
 }
+```
 
 **Processamento Automático pelo Sistema Willow:**
  - Busca da Matrícula, Aluno e Atividade: O sistema localiza a Matricula com ID 3001, o Aluno com ID 101 e a Atividade com ID 201 no banco de dados.
