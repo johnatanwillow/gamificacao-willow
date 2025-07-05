@@ -4,7 +4,15 @@ from sqlalchemy import func
 from typing import List, Dict, Union
 import json
 
-from schemas import Aluno, AlunoUpdate, GuildLeaderboardEntry, QuestCompletionPoints, XPDeductionRequest 
+# ESTE É O ÚNICO BLOCO DE IMPORTAÇÃO NECESSÁRIO E COMPLETO.
+from schemas import (
+    Aluno,
+    AlunoUpdate,
+    GuildLeaderboardEntry,
+    QuestCompletionPoints,
+    XPDeductionRequest,
+    HistoricoXPPontoSchema
+)
 from models import Aluno as ModelAluno, Curso as ModelCurso, HistoricoXPPonto 
 from database import get_db
 
@@ -324,7 +332,6 @@ def penalize_aluno_xp(aluno_id: int, xp_data: XPDeductionRequest, db: Session = 
         )
 
     db_aluno = db.query(ModelAluno).filter(ModelAluno.id == aluno_id).first()
-
     if db_aluno is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -377,3 +384,80 @@ def read_alunos_by_level(level: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Nenhum aluno encontrado no nível '{level}'.")
 
     return [_load_badges_for_response(aluno) for aluno in db_alunos]
+
+@alunos_router.get("/alunos/{aluno_id}/historico_xp_pontos", response_model=List[HistoricoXPPontoSchema])
+def get_aluno_historico_xp_pontos(aluno_id: int, db: Session = Depends(get_db)):
+    """
+    Retorna o histórico de todas as transações de XP e pontos de um aluno específico.
+    """
+    db_aluno = db.query(ModelAluno).filter(ModelAluno.id == aluno_id).first()
+    if db_aluno is None:
+        raise HTTPException(status_code=404, detail="Aluno não encontrado")
+
+    historico = db.query(HistoricoXPPonto).filter(HistoricoXPPonto.aluno_id == aluno_id).order_by(HistoricoXPPonto.data_hora.asc()).all()
+
+    if not historico:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Nenhum registro de histórico encontrado para o aluno com ID {aluno_id}.")
+
+    return [HistoricoXPPontoSchema.from_orm(registro) for registro in historico]
+
+@alunos_router.post("/alunos/nome/{nome_aluno}/penalize_xp", response_model=Aluno)
+def penalize_aluno_xp_por_nome(nome_aluno: str, xp_data: XPDeductionRequest, db: Session = Depends(get_db)):
+    """
+    Penaliza um aluno específico encontrado pelo nome (parcial ou completo), deduzindo XP.
+    Se múltiplos alunos forem encontrados com o mesmo nome, uma exceção será levantada.
+    """
+    xp_deduction = xp_data.xp_deduction
+    
+    if xp_deduction <= 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="O valor de dedução de XP deve ser um número positivo."
+        )
+
+    # Busca alunos que correspondem ao nome (case-insensitive e parcial)
+    db_alunos_matches = db.query(ModelAluno).filter(ModelAluno.nome.ilike(f"%{nome_aluno}%")).all() #
+
+    if not db_alunos_matches:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Nenhum aluno encontrado com o nome '{nome_aluno}'."
+        )
+    
+    if len(db_alunos_matches) > 1:
+        # Se múltiplos alunos corresponderem, evite penalidade ambígua
+        matched_names = [f"{aluno.nome} (ID: {aluno.id})" for aluno in db_alunos_matches]
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Múltiplos alunos encontrados com o nome '{nome_aluno}'. Por favor, use o ID do aluno para penalizar: {', '.join(matched_names)}"
+        )
+            
+    # Se apenas um aluno for encontrado, proceed
+    db_aluno = db_alunos_matches[0]
+
+    db_aluno.xp -= xp_deduction
+    if db_aluno.xp < 0:
+        db_aluno.xp = 0
+    db_aluno.level = (db_aluno.xp // 100) + 1 # Recalcula o nível
+
+    db.add(db_aluno)
+    
+    historico_registro = HistoricoXPPonto(
+        aluno_id=db_aluno.id,
+        tipo_transacao="penalizacao_xp",
+        valor_xp_alterado=-xp_deduction, 
+        valor_pontos_alterado=0.0,
+        motivo=f"Penalidade de XP por nome para o aluno '{nome_aluno}'",
+        referencia_entidade="aluno",
+        referencia_id=db_aluno.id
+    )
+    db.add(historico_registro)
+    
+    db.commit() 
+    db.refresh(db_aluno) 
+
+    if _check_and_award_level_badges(db_aluno, db):
+        db.commit()
+        db.refresh(db_aluno)
+            
+    return _load_badges_for_response(db_aluno)
