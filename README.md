@@ -206,7 +206,7 @@ Permite renomear a guilda ou movê-la para uma turma diferente. Ao mover para um
 ```json
 {
   "nome": "Johnatan",
-  "apelido": "  
+  "apelido": "johnwill"  
   "guilda_id": 1
   "xp": 0,
   "total_points": 0,
@@ -220,7 +220,7 @@ Permite renomear a guilda ou movê-la para uma turma diferente. Ao mover para um
   ```json
   {
     "nome": "Johnatan",
-    "apelido": "  
+    "apelido": "johnwill"   
     "guilda_id": 1
     "xp": 0,
     "total_points": 0,
@@ -260,7 +260,8 @@ POST /alunos/{aluno_id}/add_quest_academic_points
    "badge_name": "Mestre da Gemas"  
     "motivo": "Pela fluencia acima da média dos demais alunos (um aluno estrangeiro ou que já morou em países anglófonos)"
 }
-
+```
+```json
 BADGE_TIERS = {
     100: "Explorador Iniciante",
     200: "Explorador Bronze",
