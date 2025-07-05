@@ -1,0 +1,69 @@
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+from typing import List
+from schemas import Atividade
+from models import Atividade as ModelAtividade
+from database import get_db
+
+atividades_router = APIRouter()
+
+@atividades_router.get("/atividades", response_model=List[Atividade])
+def read_atividades(db: Session = Depends(get_db)):
+    """
+    Retorna uma lista de todas as atividades (quests) disponíveis, incluindo informações de gamificação.
+    """
+    atividades = db.query(ModelAtividade).all()
+    return [Atividade.from_orm(atividade) for atividade in atividades]
+
+@atividades_router.post("/atividades", response_model=Atividade, status_code=status.HTTP_201_CREATED)
+def create_atividade(atividade: Atividade, db: Session = Depends(get_db)):
+    """
+    Cria uma nova atividade (quest) com seus atributos, incluindo XP e pontos de recompensa.
+
+    Args:
+        atividade: Dados da atividade a ser criada (incluindo xp_on_completion e points_on_completion).
+
+    Returns:
+        Atividade: A atividade criada.
+    """
+    db_atividade = ModelAtividade(**atividade.dict(exclude={"id"}))
+    db.add(db_atividade)
+    db.commit()
+    db.refresh(db_atividade)
+    return Atividade.from_orm(db_atividade)
+
+@atividades_router.put("/atividades/{codigo_atividade}", response_model=Atividade)
+def update_atividade(codigo_atividade: str, atividade: Atividade, db: Session = Depends(get_db)):
+    """
+    Atualiza os dados de uma atividade (quest) existente pelo seu código.
+
+    Args:
+        codigo_atividade: O código da atividade a ser atualizada.
+        atividade: Os novos dados da atividade (incluindo xp_on_completion e points_on_completion).
+
+    Raises:
+        HTTPException: 404 - Atividade não encontrada.
+
+    Returns:
+        Atividade: A atividade atualizada.
+    """
+    db_atividade = db.query(ModelAtividade).filter(ModelAtividade.codigo == codigo_atividade).first()
+    if db_atividade is None:
+        raise HTTPException(status_code=404, detail="Atividade não encontrada")
+
+    for key, value in atividade.dict(exclude_unset=True, exclude={"id", "codigo"}).items():
+        setattr(db_atividade, key, value)
+
+    db.commit()
+    db.refresh(db_atividade)
+    return Atividade.from_orm(db_atividade)
+
+@atividades_router.get("/atividades/{codigo_atividade}", response_model=Atividade)
+def read_atividade_por_codigo(codigo_atividade: str, db: Session = Depends(get_db)):
+    """
+    Retorna os detalhes de uma atividade (quest) específica com base no código fornecido.
+    """
+    db_atividade = db.query(ModelAtividade).filter(ModelAtividade.codigo == codigo_atividade).first()
+    if db_atividade is None:
+        raise HTTPException(status_code=404, detail="Nenhuma atividade encontrada com esse código")
+    return Atividade.from_orm(db_atividade)
