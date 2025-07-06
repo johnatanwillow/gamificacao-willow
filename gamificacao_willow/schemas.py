@@ -115,6 +115,12 @@ class BulkMatriculaByTurmaCreate(BaseModel):
     curso_id: int
     turma_id: int
 
+# NOVO SCHEMA: BulkCompleteMatriculaGuildRequest
+class BulkCompleteMatriculaGuildRequest(BaseModel):
+    atividade_id: int
+    guilda_id: int
+    score: int # Score a ser aplicado para todos os alunos na guilda
+
 class XPDeductionRequest(BaseModel):
     xp_deduction: int
     motivo: Optional[str] = None

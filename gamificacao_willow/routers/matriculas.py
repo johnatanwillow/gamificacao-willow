@@ -7,7 +7,8 @@ from schemas import (
     Matricula,
     BulkMatriculaCreate,
     HistoricoXPPontoSchema,
-    BulkMatriculaByTurmaCreate 
+    BulkMatriculaByTurmaCreate,
+    BulkCompleteMatriculaGuildRequest # NOVO SCHEMA IMPORTADO
 )
 from models import (
     Matricula as ModelMatricula,
@@ -232,6 +233,106 @@ def atividade_completa(matricula_id: int, score: int, db: Session = Depends(get_
         db.refresh(aluno)
     
     return Matricula.from_orm(db_matricula)
+
+@matriculas_router.put("/matriculas/complete-by-guild", response_model=List[Matricula])
+def complete_atividade_for_guild(complete_data: BulkCompleteMatriculaGuildRequest, db: Session = Depends(get_db)):
+    """
+    Marca uma atividade como concluída para todos os alunos de uma guilda específica.
+    Atualiza o XP, pontos totais e pontos acadêmicos de cada aluno, além de verificar
+    e conceder distintivos de nível.
+
+    Args:
+        complete_data: Contém o ID da atividade, o ID da guilda e a pontuação a ser aplicada.
+
+    Returns:
+        List[Matricula]: Uma lista das matrículas que foram atualizadas.
+
+    Raises:
+        HTTPException: 404 - Atividade, Guilda ou Alunos na guilda não encontrados,
+                             ou se nenhum aluno tiver matrícula para a atividade.
+    """
+    db_atividade = db.query(ModelAtividade).filter(ModelAtividade.id == complete_data.atividade_id).first()
+    if db_atividade is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Atividade com ID {complete_data.atividade_id} não encontrada.")
+
+    db_guilda = db.query(ModelGuilda).filter(ModelGuilda.id == complete_data.guilda_id).first()
+    if not db_guilda:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Guilda com ID {complete_data.guilda_id} não encontrada.")
+
+    db_alunos_na_guilda = db.query(ModelAluno).options(joinedload(ModelAluno.matriculas)).filter(ModelAluno.guilda_id == complete_data.guilda_id).all()
+    if not db_alunos_na_guilda:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Nenhum aluno encontrado na guilda com ID {complete_data.guilda_id}.")
+
+    updated_matriculas = []
+    historico_registros = []
+
+    for aluno in db_alunos_na_guilda:
+        # Tenta encontrar uma matrícula existente para o aluno e a atividade
+        db_matricula = next(
+            (m for m in aluno.matriculas if m.atividade_id == complete_data.atividade_id),
+            None
+        )
+
+        if db_matricula:
+            if db_matricula.status == "concluido":
+                print(f"Matrícula do aluno {aluno.nome} (ID: {aluno.id}) na atividade '{db_atividade.nome}' já está concluída. Ignorando.")
+                updated_matriculas.append(Matricula.from_orm(db_matricula))
+                continue
+
+            db_matricula.status = "concluido"
+            db_matricula.score_in_quest = complete_data.score
+            
+            xp_ganho = db_atividade.xp_on_completion
+            pontos_totais_ganhos = complete_data.score
+            pontos_academicos_ganhos = db_atividade.points_on_completion
+
+            aluno.xp += xp_ganho
+            aluno.total_points += pontos_totais_ganhos
+            aluno.academic_score += pontos_academicos_ganhos
+            aluno.level = (aluno.xp // 100) + 1
+            
+            db.add(aluno)
+            db.add(db_matricula)
+            
+            historico_registros.append(HistoricoXPPonto(
+                aluno_id=aluno.id,
+                tipo_transacao="ganho_xp_atividade_em_massa",
+                valor_xp_alterado=xp_ganho,
+                valor_pontos_alterado=float(pontos_totais_ganhos),
+                motivo=f"Conclusão em massa da Atividade '{db_atividade.nome}' ({db_atividade.codigo}) para a guilda '{db_guilda.nome}' com score {complete_data.score}",
+                referencia_entidade="matricula",
+                referencia_id=db_matricula.id
+            ))
+
+            if pontos_academicos_ganhos > 0:
+                historico_registros.append(HistoricoXPPonto(
+                    aluno_id=aluno.id,
+                    tipo_transacao="ganho_pontos_academicos_atividade_em_massa",
+                    valor_xp_alterado=0, 
+                    valor_pontos_alterado=pontos_academicos_ganhos,
+                    motivo=f"Pontos Acadêmicos em massa pela Atividade '{db_atividade.nome}' ({db_atividade.codigo}) para a guilda '{db_guilda.nome}'",
+                    referencia_entidade="atividade",
+                    referencia_id=db_atividade.id
+                ))
+            updated_matriculas.append(Matricula.from_orm(db_matricula))
+        else:
+            print(f"Aluno {aluno.nome} (ID: {aluno.id}) não possui matrícula para a atividade '{db_atividade.nome}'. Ignorando.")
+
+    if not updated_matriculas:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Nenhum aluno da guilda com ID {complete_data.guilda_id} possui matrícula para a atividade com ID {complete_data.atividade_id} para ser concluída.")
+
+    db.add_all(historico_registros)
+    db.commit()
+
+    # Refresh all updated students and check for badges after commit
+    for matricula_data in updated_matriculas:
+        db_aluno = db.query(ModelAluno).filter(ModelAluno.id == matricula_data.aluno_id).first()
+        if db_aluno:
+            db.refresh(db_aluno)
+            _check_and_award_level_badges(db_aluno, db)
+            db.commit() # Commit after badge check for each student
+
+    return updated_matriculas
 
 @matriculas_router.get("/matriculas/aluno/{nome_aluno}", response_model=Dict[str, Union[str, List[str]]])
 def read_matriculas_por_nome_aluno(nome_aluno: str, db: Session = Depends(get_db)):
