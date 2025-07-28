@@ -6,6 +6,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from database import Base, engine
 from routers.alunos import alunos_router
+from routers.atividades import atividades_router # Adicionado import do router de atividades
+from routers.matriculas import matriculas_router # Adicionado import do router de matriculas
 
 # Cria todas as tabelas no banco de dados, se ainda não existirem
 Base.metadata.create_all(bind=engine)
@@ -43,6 +45,9 @@ app.add_middleware(
 
 # Inclui os roteadores da aplicação
 app.include_router(alunos_router)
+app.include_router(atividades_router) # Inclui o roteador de atividades
+app.include_router(matriculas_router) # Inclui o roteador de matrículas
+
 
 @app.get("/")
 async def read_root():

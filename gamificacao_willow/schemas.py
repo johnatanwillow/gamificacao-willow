@@ -1,26 +1,24 @@
-# Arquivo: gamificacao_willow/schemas.py
-# Substitua TODO o conteúdo deste arquivo pelo código abaixo.
-
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from datetime import datetime
 
 class Matricula(BaseModel):
+    id: Optional[int] = None # Adicionado id como opcional para POST
     aluno_id: int
     atividade_id: int
     score_in_quest: Optional[int] = 0
     status: Optional[str] = "iniciado"
+    aluno_nome: Optional[str] = None # NOVO: Nome do aluno para exibição
+    atividade_nome: Optional[str] = None # NOVO: Nome da atividade para exibição
 
     class Config:
         from_attributes = True
-
-Matriculas = List[Matricula]
 
 class TurmaBase(BaseModel):
     nome: str
     ano: Optional[str] = None # Ex: "3", "7", "8" ou "3° Ano", para indicar o ano da série
 
-    class Config: # <--- Adicionado: Certifique-se que Config está aqui
+    class Config:
         from_attributes = True
 
 class TurmaCreate(TurmaBase):
@@ -44,14 +42,16 @@ class GuildaBase(BaseModel):
     nome: str
     turma_id: int # ID da Turma a qual esta Guilda pertence
 
-    class Config: # <--- Adicionado: Certifique-se que Config está aqui
+    class Config:
         from_attributes = True
 
 class GuildaCreate(GuildaBase):
     pass
 
-class Guilda(GuildaBase):
+class Guilda(BaseModel): # Removido GuildaBase na herança direta para evitar campos duplicados no from_attributes
     id: int
+    nome: str # Adicionado diretamente aqui
+    turma_id: int # Adicionado diretamente aqui
     turma: Optional[TurmaBase] = None
     alunos: List["Aluno"] = [] # Relação para carregar alunos na resposta da guilda
 
@@ -82,9 +82,28 @@ class Aluno(BaseModel):
     class Config:
         from_attributes = True
 
-Alunos = List[Aluno]
+# --- SCHEMAS PARA ATIVIDADE ---
+class AtividadeBase(BaseModel):
+    nome: str
+    codigo: str
+    descricao: str
+    xp_on_completion: Optional[int] = 0
+    points_on_completion: Optional[float] = 0.0
 
-# NOVO SCHEMA: AlunoCreateRequest - Para o corpo da requisição POST /alunos
+    class Config:
+        from_attributes = True
+
+class AtividadeCreate(AtividadeBase):
+    pass
+
+class Atividade(AtividadeBase):
+    id: int # ID da atividade
+
+    class Config:
+        from_attributes = True
+# --- FIM DOS SCHEMAS PARA ATIVIDADE ---
+
+
 class AlunoCreateRequest(BaseModel):
     nome: str
     apelido: Optional[str] = None
@@ -111,18 +130,6 @@ class AlunoUpdate(BaseModel):
 
     class Config:
         from_attributes = True
-
-class Atividade(BaseModel):
-    nome: str
-    codigo: str
-    descricao: str
-    xp_on_completion: Optional[int] = 0
-    points_on_completion: Optional[float] = 0.0
-
-    class Config:
-        from_attributes = True
-
-Atividade = List[Atividade]
 
 class GuildLeaderboardEntry(BaseModel):
     guilda_id: int
@@ -172,7 +179,7 @@ class HistoricoXPPontoSchema(BaseModel):
 class HistoricoAlunoDetalhadoSchema(BaseModel):
     id: int
     aluno_id: int
-    aluno_nome: str
+    aluno_nome: Optional[str] = None # CORRIGIDO: Tornar aluno_nome opcional
     aluno_apelido: Optional[str] = None
     guilda_nome: Optional[str] = None
     turma_nome: Optional[str] = None
@@ -191,6 +198,9 @@ class BadgeAwardRequest(BaseModel):
     badge_name: str
     motivo: Optional[str] = None
 
+# Reconstruir modelos após definir todos para evitar erros de referência circular
 Guilda.model_rebuild()
 Turma.model_rebuild()
 Aluno.model_rebuild()
+Matricula.model_rebuild()
+Atividade.model_rebuild()

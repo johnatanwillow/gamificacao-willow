@@ -8,23 +8,40 @@ from schemas import (
     BulkMatriculaCreate,
     HistoricoXPPontoSchema,
     BulkMatriculaByTurmaCreate,
-    BulkCompleteMatriculaGuildRequest # NOVO SCHEMA IMPORTADO
+    BulkCompleteMatriculaGuildRequest
 )
 from models import (
     Matricula as ModelMatricula,
     Aluno as ModelAluno,
-    Atividade as ModelAtividade, 
+    Atividade as ModelAtividade,
     HistoricoXPPonto,
     Guilda as ModelGuilda,
-    Turma as ModelTurma 
+    Turma as ModelTurma
 )
 from database import get_db
 
 # Importa _check_and_award_level_badges e _load_aluno_for_response do roteador de alunos
-# O _load_aluno_for_response será usado para formatar a resposta do aluno corretamente
 from routers.alunos import _check_and_award_level_badges, _load_aluno_for_response
 
 matriculas_router = APIRouter()
+
+# --- Funções Auxiliares ---
+def _load_matricula_for_response(db_matricula_obj: ModelMatricula) -> Matricula:
+    """
+    Função auxiliar para carregar e formatar os dados de um objeto Matricula do banco de dados
+    para o schema de resposta, incluindo nomes de aluno e atividade.
+    Assume que as relações 'aluno' e 'atividade' do ModelMatricula estão carregadas.
+    """
+    return Matricula(
+        id=db_matricula_obj.id,
+        aluno_id=db_matricula_obj.aluno_id,
+        atividade_id=db_matricula_obj.atividade_id,
+        score_in_quest=db_matricula_obj.score_in_quest,
+        status=db_matricula_obj.status,
+        aluno_nome=db_matricula_obj.aluno.nome if db_matricula_obj.aluno else None,
+        atividade_nome=db_matricula_obj.atividade.nome if db_matricula_obj.atividade else None,
+    )
+
 
 @matriculas_router.post("/matriculas/bulk-by-turma", response_model=List[Matricula], status_code=status.HTTP_201_CREATED)
 def create_bulk_matriculas_by_turma(bulk_data: BulkMatriculaByTurmaCreate, db: Session = Depends(get_db)):
@@ -36,14 +53,15 @@ def create_bulk_matriculas_by_turma(bulk_data: BulkMatriculaByTurmaCreate, db: S
         bulk_data: Contém o ID da atividade e o ID da turma para a matrícula em massa.
 
     Returns:
-        List[Matricula]: Uma lista das matrículas criadas ou existentes.
+        List[Matricula]: Uma lista das matrículas criadas ou existentes com nomes de aluno/atividade.
 
     Raises:
         HTTPException: 404 - Atividade, Turma, Guildas na turma ou Alunos na turma não encontrados.
     """
-    db_atividade = db.query(ModelAtividade).filter(ModelAtividade.id == bulk_data.atividade_id).first()
+    # CORREÇÃO AQUI: bulk_data.curso_id no lugar de bulk_data.atividade_id
+    db_atividade = db.query(ModelAtividade).filter(ModelAtividade.id == bulk_data.curso_id).first()
     if db_atividade is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Atividade com ID {bulk_data.atividade_id} não encontrada.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Atividade com ID {bulk_data.curso_id} não encontrada.")
 
     db_turma = db.query(ModelTurma).options(joinedload(ModelTurma.guildas).joinedload(ModelGuilda.alunos)).filter(ModelTurma.id == bulk_data.turma_id).first()
     if not db_turma:
@@ -60,26 +78,25 @@ def create_bulk_matriculas_by_turma(bulk_data: BulkMatriculaByTurmaCreate, db: S
     if not all_alunos_in_turma:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Nenhum aluno encontrado nas guildas da Turma com ID {bulk_data.turma_id}.")
 
-    created_matriculas = []
+    matriculas_to_return = []
     for aluno in all_alunos_in_turma:
-        existing_matricula = db.query(ModelMatricula).filter(
+        existing_matricula = db.query(ModelMatricula).options(joinedload(ModelMatricula.aluno), joinedload(ModelMatricula.atividade)).filter(
             ModelMatricula.aluno_id == aluno.id,
-            ModelMatricula.atividade_id == bulk_data.atividade_id
+            ModelMatricula.atividade_id == bulk_data.curso_id # CORREÇÃO AQUI
         ).first()
 
         if existing_matricula is None:
-            new_matricula = ModelMatricula(aluno_id=aluno.id, atividade_id=bulk_data.atividade_id)
+            new_matricula = ModelMatricula(aluno_id=aluno.id, atividade_id=bulk_data.curso_id) # CORREÇÃO AQUI
             db.add(new_matricula)
-            created_matriculas.append(Matricula.from_orm(new_matricula))
+            db.flush() # Para gerar o ID da nova matrícula antes do commit
+            db.refresh(new_matricula) # Carrega as relações para o _load_matricula_for_response
+            matriculas_to_return.append(_load_matricula_for_response(new_matricula))
         else:
             print(f"Aluno {aluno.nome} (ID: {aluno.id}) já matriculado na atividade '{db_atividade.nome}'. Matrícula ignorada.")
-            created_matriculas.append(Matricula.from_orm(existing_matricula))
+            matriculas_to_return.append(_load_matricula_for_response(existing_matricula))
 
     db.commit()
-    for matricula_obj in created_matriculas:
-        db.refresh(matricula_obj._sa_instance_state.obj) 
-    
-    return created_matriculas
+    return matriculas_to_return
 
 @matriculas_router.post("/matriculas/bulk-by-guild", response_model=List[Matricula], status_code=status.HTTP_201_CREATED)
 def create_bulk_matriculas_by_guild(bulk_data: BulkMatriculaCreate, db: Session = Depends(get_db)):
@@ -91,43 +108,42 @@ def create_bulk_matriculas_by_guild(bulk_data: BulkMatriculaCreate, db: Session 
         bulk_data: Contém o ID da atividade e o ID da guilda para a matrícula em massa.
 
     Returns:
-        List[Matricula]: Uma lista das matrículas criadas ou existentes.
+        List[Matricula]: Uma lista das matrículas criadas ou existentes com nomes de aluno/atividade.
 
     Raises:
         HTTPException: 404 - Atividade, Guilda ou Alunos na guilda não encontrados.
     """
-    db_atividade = db.query(ModelAtividade).filter(ModelAtividade.id == bulk_data.atividade_id).first()
+    db_atividade = db.query(ModelAtividade).filter(ModelAtividade.id == bulk_data.curso_id).first()
     if db_atividade is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Atividade com ID {bulk_data.atividade_id} não encontrada.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Atividade com ID {bulk_data.curso_id} não encontrada.")
 
-    db_guilda = db.query(ModelGuilda).filter(ModelGuilda.id == bulk_data.guilda_id).first()
+    db_guilda = db.query(ModelGuilda).options(joinedload(ModelGuilda.alunos)).filter(ModelGuilda.id == bulk_data.guilda_id).first()
     if not db_guilda:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Guilda com ID {bulk_data.guilda_id} não encontrada.")
 
-    db_alunos_na_guilda = db.query(ModelAluno).filter(ModelAluno.guilda_id == bulk_data.guilda_id).all()
+    db_alunos_na_guilda = db_guilda.alunos # Já carregado com joinedload
     if not db_alunos_na_guilda:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Nenhum aluno encontrado na guilda com ID {bulk_data.guilda_id}.")
 
-    created_matriculas = []
+    matriculas_to_return = []
     for aluno in db_alunos_na_guilda:
-        existing_matricula = db.query(ModelMatricula).filter(
+        existing_matricula = db.query(ModelMatricula).options(joinedload(ModelMatricula.aluno), joinedload(ModelMatricula.atividade)).filter(
             ModelMatricula.aluno_id == aluno.id,
-            ModelMatricula.atividade_id == bulk_data.atividade_id
+            ModelMatricula.atividade_id == bulk_data.curso_id
         ).first()
 
         if existing_matricula is None:
-            new_matricula = ModelMatricula(aluno_id=aluno.id, atividade_id=bulk_data.atividade_id)
+            new_matricula = ModelMatricula(aluno_id=aluno.id, atividade_id=bulk_data.curso_id)
             db.add(new_matricula)
-            created_matriculas.append(Matricula.from_orm(new_matricula))
+            db.flush() # Para gerar o ID da nova matrícula antes do commit
+            db.refresh(new_matricula) # Carrega as relações para o _load_matricula_for_response
+            matriculas_to_return.append(_load_matricula_for_response(new_matricula))
         else:
             print(f"Aluno {aluno.nome} (ID: {aluno.id}) já matriculado na atividade '{db_atividade.nome}'. Matrícula ignorada.")
-            created_matriculas.append(Matricula.from_orm(existing_matricula))
+            matriculas_to_return.append(_load_matricula_for_response(existing_matricula))
 
     db.commit()
-    for matricula_obj in created_matriculas:
-        pass
-
-    return created_matriculas
+    return matriculas_to_return
 
 @matriculas_router.post("/matriculas", response_model=Matricula, status_code=status.HTTP_201_CREATED)
 def create_matricula(matricula: Matricula, db: Session = Depends(get_db)):
@@ -139,7 +155,7 @@ def create_matricula(matricula: Matricula, db: Session = Depends(get_db)):
         matricula: Dados da matrícula a ser criada (aluno_id, atividade_id).
 
     Returns:
-        Matricula: A matrícula criada.
+        Matricula: A matrícula criada com nomes de aluno/atividade.
 
     Raises:
         HTTPException: 404 - Aluno ou Atividade não encontrada.
@@ -150,11 +166,12 @@ def create_matricula(matricula: Matricula, db: Session = Depends(get_db)):
     if db_aluno is None or db_atividade is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Aluno ou Atividade não encontrada")
 
-    db_matricula = ModelMatricula(**matricula.dict())
+    db_matricula = ModelMatricula(aluno_id=matricula.aluno_id, atividade_id=matricula.atividade_id)
     db.add(db_matricula)
     db.commit()
-    db.refresh(db_matricula)
-    return Matricula.from_orm(db_matricula)
+    db.refresh(db_matricula) # Refresh para carregar as relações aluno e atividade no db_matricula
+
+    return _load_matricula_for_response(db_matricula)
 
 @matriculas_router.put("/matriculas/{matricula_id}/complete", response_model=Matricula)
 def atividade_completa(matricula_id: int, score: int, db: Session = Depends(get_db)):
@@ -168,20 +185,20 @@ def atividade_completa(matricula_id: int, score: int, db: Session = Depends(get_
         score: A pontuação do aluno na atividade.
 
     Returns:
-        Matricula: A matrícula atualizada.
+        Matricula: A matrícula atualizada com nomes de aluno/atividade.
 
     Raises:
         HTTPException: 404 - Matrícula não encontrada.
     """
-    db_matricula = db.query(ModelMatricula).filter(ModelMatricula.id == matricula_id).first()
+    db_matricula = db.query(ModelMatricula).options(joinedload(ModelMatricula.aluno).joinedload(ModelAluno.guilda_obj).joinedload(ModelGuilda.turma), joinedload(ModelMatricula.atividade)).filter(ModelMatricula.id == matricula_id).first()
     if db_matricula is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Matrícula não encontrada")
 
     db_matricula.status = "concluido"
     db_matricula.score_in_quest = score
     
-    aluno = db.query(ModelAluno).options(joinedload(ModelAluno.guilda_obj).joinedload(ModelGuilda.turma)).filter(ModelAluno.id == db_matricula.aluno_id).first()
-    atividade = db.query(ModelAtividade).filter(ModelAtividade.id == db_matricula.atividade_id).first()
+    aluno = db_matricula.aluno
+    atividade = db_matricula.atividade
     
     xp_ganho = 0
     pontos_totais_ganhos = 0
@@ -189,17 +206,17 @@ def atividade_completa(matricula_id: int, score: int, db: Session = Depends(get_
 
     if aluno and atividade:
         xp_ganho = atividade.xp_on_completion
-        pontos_totais_ganhos = score
+        pontos_totais_ganhos = score # A pontuação da atividade é o que o professor enviou no 'score'
         pontos_academicos_ganhos = atividade.points_on_completion
 
         aluno.xp += xp_ganho
         aluno.total_points += pontos_totais_ganhos
         aluno.academic_score += pontos_academicos_ganhos
         aluno.level = (aluno.xp // 100) + 1
-        db.add(aluno)
+        db.add(aluno) # Adiciona o aluno atualizado à sessão, se não estiver já lá
 
     db.commit()
-    db.refresh(db_matricula)
+    db.refresh(db_matricula) # Refresh para garantir que as relações estejam carregadas para o retorno
     
     if aluno and atividade:
         historico_xp = HistoricoXPPonto(
@@ -217,7 +234,7 @@ def atividade_completa(matricula_id: int, score: int, db: Session = Depends(get_
             historico_pontos_academicos = HistoricoXPPonto(
                 aluno_id=aluno.id,
                 tipo_transacao="ganho_pontos_academicos_atividade",
-                valor_xp_alterado=0, 
+                valor_xp_alterado=0,
                 valor_pontos_alterado=pontos_academicos_ganhos,
                 motivo=f"Pontos Acadêmicos pela Atividade '{atividade.nome}' ({atividade.codigo})",
                 referencia_entidade="atividade",
@@ -229,10 +246,12 @@ def atividade_completa(matricula_id: int, score: int, db: Session = Depends(get_
 
     if aluno:
         _check_and_award_level_badges(aluno, db)
-        db.commit()
-        db.refresh(aluno)
+        db.commit() # Commit após a verificação de badges
+        db.refresh(aluno) # Refresh final do aluno
     
-    return Matricula.from_orm(db_matricula)
+    # Recarrega a matrícula para garantir que todas as relações e atributos estejam atualizados para o retorno
+    db.refresh(db_matricula)
+    return _load_matricula_for_response(db_matricula)
 
 @matriculas_router.put("/matriculas/complete-by-guild", response_model=List[Matricula])
 def complete_atividade_for_guild(complete_data: BulkCompleteMatriculaGuildRequest, db: Session = Depends(get_db)):
@@ -245,7 +264,7 @@ def complete_atividade_for_guild(complete_data: BulkCompleteMatriculaGuildReques
         complete_data: Contém o ID da atividade, o ID da guilda e a pontuação a ser aplicada.
 
     Returns:
-        List[Matricula]: Uma lista das matrículas que foram atualizadas.
+        List[Matricula]: Uma lista das matrículas que foram atualizadas com nomes de aluno/atividade.
 
     Raises:
         HTTPException: 404 - Atividade, Guilda ou Alunos na guilda não encontrados,
@@ -255,15 +274,15 @@ def complete_atividade_for_guild(complete_data: BulkCompleteMatriculaGuildReques
     if db_atividade is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Atividade com ID {complete_data.atividade_id} não encontrada.")
 
-    db_guilda = db.query(ModelGuilda).filter(ModelGuilda.id == complete_data.guilda_id).first()
+    db_guilda = db.query(ModelGuilda).options(joinedload(ModelGuilda.alunos).joinedload(ModelAluno.matriculas).joinedload(ModelMatricula.atividade)).filter(ModelGuilda.id == complete_data.guilda_id).first()
     if not db_guilda:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Guilda com ID {complete_data.guilda_id} não encontrada.")
 
-    db_alunos_na_guilda = db.query(ModelAluno).options(joinedload(ModelAluno.matriculas)).filter(ModelAluno.guilda_id == complete_data.guilda_id).all()
+    db_alunos_na_guilda = db_guilda.alunos
     if not db_alunos_na_guilda:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Nenhum aluno encontrado na guilda com ID {complete_data.guilda_id}.")
 
-    updated_matriculas = []
+    updated_matriculas_list = []
     historico_registros = []
 
     for aluno in db_alunos_na_guilda:
@@ -276,7 +295,7 @@ def complete_atividade_for_guild(complete_data: BulkCompleteMatriculaGuildReques
         if db_matricula:
             if db_matricula.status == "concluido":
                 print(f"Matrícula do aluno {aluno.nome} (ID: {aluno.id}) na atividade '{db_atividade.nome}' já está concluída. Ignorando.")
-                updated_matriculas.append(Matricula.from_orm(db_matricula))
+                updated_matriculas_list.append(_load_matricula_for_response(db_matricula))
                 continue
 
             db_matricula.status = "concluido"
@@ -292,8 +311,9 @@ def complete_atividade_for_guild(complete_data: BulkCompleteMatriculaGuildReques
             aluno.level = (aluno.xp // 100) + 1
             
             db.add(aluno)
-            db.add(db_matricula)
-            
+            db.add(db_matricula) # Adiciona a matrícula atualizada à sessão
+            db.flush() # Para garantir que as alterações sejam conhecidas antes de criar histórico
+
             historico_registros.append(HistoricoXPPonto(
                 aluno_id=aluno.id,
                 tipo_transacao="ganho_xp_atividade_em_massa",
@@ -308,31 +328,31 @@ def complete_atividade_for_guild(complete_data: BulkCompleteMatriculaGuildReques
                 historico_registros.append(HistoricoXPPonto(
                     aluno_id=aluno.id,
                     tipo_transacao="ganho_pontos_academicos_atividade_em_massa",
-                    valor_xp_alterado=0, 
+                    valor_xp_alterado=0,
                     valor_pontos_alterado=pontos_academicos_ganhos,
                     motivo=f"Pontos Acadêmicos em massa pela Atividade '{db_atividade.nome}' ({db_atividade.codigo}) para a guilda '{db_guilda.nome}'",
                     referencia_entidade="atividade",
                     referencia_id=db_atividade.id
                 ))
-            updated_matriculas.append(Matricula.from_orm(db_matricula))
+            updated_matriculas_list.append(_load_matricula_for_response(db_matricula))
         else:
             print(f"Aluno {aluno.nome} (ID: {aluno.id}) não possui matrícula para a atividade '{db_atividade.nome}'. Ignorando.")
 
-    if not updated_matriculas:
+    if not updated_matriculas_list:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Nenhum aluno da guilda com ID {complete_data.guilda_id} possui matrícula para a atividade com ID {complete_data.atividade_id} para ser concluída.")
 
     db.add_all(historico_registros)
     db.commit()
 
     # Refresh all updated students and check for badges after commit
-    for matricula_data in updated_matriculas:
+    for matricula_data in updated_matriculas_list:
         db_aluno = db.query(ModelAluno).filter(ModelAluno.id == matricula_data.aluno_id).first()
         if db_aluno:
             db.refresh(db_aluno)
             _check_and_award_level_badges(db_aluno, db)
             db.commit() # Commit after badge check for each student
 
-    return updated_matriculas
+    return updated_matriculas_list
 
 @matriculas_router.get("/matriculas/aluno/{nome_aluno}", response_model=Dict[str, Union[str, List[str]]])
 def read_matriculas_por_nome_aluno(nome_aluno: str, db: Session = Depends(get_db)):
@@ -355,7 +375,10 @@ def read_matriculas_por_nome_aluno(nome_aluno: str, db: Session = Depends(get_db
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Aluno não encontrado")
 
     atividades_matriculadas = []
-    for matricula in db_aluno.matriculas:
+    # Garante que as matrículas do aluno estão carregadas para acessar atividade.nome
+    db.refresh(db_aluno)
+    # Acessar relações diretamente para carregar as atividades
+    for matricula in db.query(ModelMatricula).options(joinedload(ModelMatricula.atividade)).filter(ModelMatricula.aluno_id == db_aluno.id).all():
         atividade = matricula.atividade
         if atividade:
             atividades_matriculadas.append(atividade.nome)
@@ -377,13 +400,14 @@ def read_matriculas_por_nome_aluno(nome_aluno: str, db: Session = Depends(get_db
 @matriculas_router.get("/matriculas/aluno/{aluno_id}/details", response_model=List[Matricula])
 def read_matriculas_details_por_aluno(aluno_id: int, db: Session = Depends(get_db)):
     """
-    Retorna os detalhes de todas as matrículas de um aluno específico, com base no ID fornecido.
+    Retorna os detalhes de todas as matrículas de um aluno específico, com base no ID fornecido,
+    incluindo nomes de aluno e atividade.
 
     Args:
         aluno_id: O ID do aluno para buscar os detalhes das matrículas.
 
     Returns:
-        List[Matricula]: Uma lista de objetos Matrícula com todos os detalhes.
+        List[Matricula]: Uma lista de objetos Matrícula com todos os detalhes e nomes.
 
     Raises:
         HTTPException: 404 - Aluno ou matrículas não encontradas.
@@ -392,14 +416,15 @@ def read_matriculas_details_por_aluno(aluno_id: int, db: Session = Depends(get_d
     if db_aluno is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Aluno com ID {aluno_id} não encontrado.")
 
-    db_matriculas = db.query(ModelMatricula).filter(ModelMatricula.aluno_id == aluno_id).all()
+    # Eager load 'aluno' e 'atividade' para popular os nomes no schema Matricula
+    db_matriculas = db.query(ModelMatricula).options(joinedload(ModelMatricula.aluno), joinedload(ModelMatricula.atividade)).filter(ModelMatricula.aluno_id == aluno_id).all()
     
     if not db_matriculas:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Nenhuma matrícula encontrada para o aluno com ID {aluno_id}.")
     
-    return [Matricula.from_orm(m) for m in db_matriculas]
+    return [_load_matricula_for_response(m) for m in db_matriculas]
 
-@matriculas_router.get("/matriculas/atividade/{codigo_atividade}", response_model=Dict[str, Union[str, List[str]]])
+@matriculas_router.get("/matriculas/atividade/{codigo_atividade}", response_model=Dict[str, Union[str, List[Dict[str, Union[int, str]]]]])
 def read_alunos_matriculados_por_codigo_atividade(codigo_atividade: str, db: Session = Depends(get_db)):
     """
     Retorna uma lista de alunos matriculados em uma atividade específica, identificada pelo seu código.
@@ -414,15 +439,15 @@ def read_alunos_matriculados_por_codigo_atividade(codigo_atividade: str, db: Ses
     Raises:
         HTTPException: 404 - Atividade ou alunos matriculados não encontrados.
     """
-    db_atividade = db.query(ModelAtividade).filter(ModelAtividade.codigo == codigo_atividade).first()
+    db_atividade = db.query(ModelAtividade).options(joinedload(ModelAtividade.matriculas).joinedload(ModelMatricula.aluno).joinedload(ModelAluno.guilda_obj).joinedload(ModelGuilda.turma)).filter(ModelAtividade.codigo == codigo_atividade).first()
 
     if not db_atividade:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Atividade não encontrada")
 
     alunos_matriculados = []
     for matricula in db_atividade.matriculas:
-        aluno = db.query(ModelAluno).options(joinedload(ModelAluno.guilda_obj).joinedload(ModelGuilda.turma)).filter(ModelAluno.id == matricula.aluno_id).first()
-        if aluno:  
+        aluno = matricula.aluno # Aluno já carregado via joinedload
+        if aluno:
             alunos_matriculados.append({
                 "aluno_id": aluno.id,
                 "aluno_nome": aluno.nome,

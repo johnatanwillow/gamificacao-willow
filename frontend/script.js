@@ -37,9 +37,13 @@ async function apiRequest(endpoint, method, data = null) {
         const response = await fetch(url, options);
         let responseData = null;
 
+        // Se a resposta for um PDF, não tente parsear como JSON
         const contentType = response.headers.get('content-type');
         if (contentType && contentType.includes('application/json')) {
             responseData = await response.json();
+        } else if (contentType && contentType.includes('application/pdf')) {
+            // Se for PDF, retorne o blob diretamente para download
+            return { success: true, data: await response.blob(), error: null, isPdf: true };
         } else {
             responseData = await response.text(); // Para respostas não-JSON (ex: 204 No Content)
         }
@@ -56,6 +60,267 @@ async function apiRequest(endpoint, method, data = null) {
     } catch (error) {
         console.error("Erro na requisição da API (rede/conexão):", error);
         return { success: false, data: null, error: "Ocorreu um erro de rede ou conexão. " + error.message };
+    }
+}
+
+
+// --- Funções de Lógica da Aba Turmas ---
+
+/**
+ * Carrega e exibe a lista de turmas na tabela.
+ */
+async function loadTurmas() {
+    const tbody = document.querySelector('#turmas-tab #dgTurmas tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="3">Carregando turmas...</td></tr>';
+
+    const result = await apiRequest('turmas', 'GET');
+
+    if (result.success) {
+        tbody.innerHTML = '';
+        if (result.data && result.data.length > 0) {
+            result.data.forEach(turma => {
+                const row = tbody.insertRow();
+                row.insertCell().textContent = turma.id;
+                row.insertCell().textContent = turma.nome;
+                row.insertCell().textContent = turma.ano || 'N/A';
+            });
+        } else {
+            tbody.innerHTML = '<tr><td colspan="3">Nenhuma turma cadastrada.</td></tr>';
+        }
+    } else {
+        alert('Erro ao carregar turmas: ' + result.error);
+        tbody.innerHTML = `<tr><td colspan="3">Erro: ${result.error}</td></tr>`;
+    }
+}
+
+/**
+ * Cria uma nova turma com base nos dados do formulário.
+ */
+async function createTurma() {
+    const nome = document.getElementById('txtNomeTurma').value;
+    const ano = document.getElementById('txtAnoTurma').value;
+
+    if (!nome) {
+        alert('O nome da turma é obrigatório!');
+        return;
+    }
+
+    const turmaData = { nome: nome, ano: ano || null };
+    const result = await apiRequest('turmas', 'POST', turmaData);
+
+    if (result.success) {
+        alert(`Turma "${result.data.nome}" criada com sucesso! ID: ${result.data.id}`);
+        document.getElementById('txtNomeTurma').value = '';
+        document.getElementById('txtAnoTurma').value = '';
+        loadTurmas();
+    } else {
+        alert('Erro ao criar turma: ' + result.error);
+    }
+}
+
+/**
+ * Atualiza uma turma existente.
+ */
+async function updateTurma() {
+    const turmaId = document.getElementById('txtIdTurmaAcao').value;
+    if (!turmaId) { alert('ID da Turma é obrigatório para atualização.'); return; }
+    const parsedTurmaId = parseInt(turmaId);
+    if (isNaN(parsedTurmaId)) { alert('ID da Turma inválido.'); return; }
+
+    const nome = document.getElementById('txtNomeTurma').value;
+    const ano = document.getElementById('txtAnoTurma').value;
+
+    const updateData = {};
+    if (nome) updateData.nome = nome;
+    if (ano) updateData.ano = ano;
+
+    if (Object.keys(updateData).length === 0) {
+        alert('Nenhum campo preenchido para atualização da turma.');
+        return;
+    }
+
+    const result = await apiRequest(`turmas/${parsedTurmaId}`, 'PUT', updateData);
+    if (result.success) {
+        alert(`Turma ID ${parsedTurmaId} atualizada com sucesso!`);
+        document.getElementById('txtIdTurmaAcao').value = '';
+        document.getElementById('txtNomeTurma').value = '';
+        document.getElementById('txtAnoTurma').value = '';
+        loadTurmas();
+    } else {
+        alert('Erro ao atualizar turma: ' + result.error);
+    }
+}
+
+/**
+ * Deleta uma turma existente.
+ */
+async function deleteTurma() {
+    const turmaId = document.getElementById('txtIdTurmaAcao').value;
+    if (!turmaId) { alert('ID da Turma é obrigatório para deletar.'); return; }
+    const parsedTurmaId = parseInt(turmaId);
+    if (isNaN(parsedTurmaId)) { alert('ID da Turma inválido.'); return; }
+
+    if (!confirm(`Tem certeza que deseja deletar a turma com ID ${parsedTurmaId}? Esta ação é irreversível e deletará GUILDAS E ALUNOS associados!`)) {
+        return;
+    }
+
+    const result = await apiRequest(`turmas/${parsedTurmaId}`, 'DELETE');
+    if (result.success) {
+        alert(`Turma ID ${parsedTurmaId} deletada com sucesso!`);
+        document.getElementById('txtIdTurmaAcao').value = '';
+        loadTurmas();
+    } else {
+        alert('Erro ao deletar turma: ' + result.error);
+    }
+}
+
+
+// --- Funções de Lógica da Aba Guildas ---
+
+/**
+ * Carrega e exibe a lista de guildas na tabela.
+ */
+async function loadGuildas() {
+    const tbody = document.querySelector('#guildas-tab #dgGuildas tbody');
+    if (!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="5">Carregando guildas...</td></tr>';
+
+    const result = await apiRequest('guildas', 'GET');
+
+    if (result.success) {
+        tbody.innerHTML = '';
+        if (result.data && result.data.length > 0) {
+            result.data.forEach(guilda => {
+                const row = tbody.insertRow();
+                row.insertCell().textContent = guilda.id;
+                row.insertCell().textContent = guilda.nome;
+                row.insertCell().textContent = guilda.turma_id || 'N/A';
+                row.insertCell().textContent = guilda.turma ? guilda.turma.nome : 'N/A';
+                row.insertCell().textContent = guilda.turma ? guilda.turma.ano : 'N/A';
+            });
+        } else {
+            tbody.innerHTML = '<tr><td colspan="5">Nenhuma guilda cadastrada.</td></tr>';
+        }
+    } else {
+        alert('Erro ao carregar guildas: ' + result.error);
+        tbody.innerHTML = `<tr><td colspan="5">Erro: ${result.error}</td></tr>`;
+    }
+}
+
+/**
+ * Cria uma nova guilda com base nos dados do formulário.
+ */
+async function createGuilda() {
+    const nome = document.getElementById('txtNomeGuilda').value;
+    const turmaId = document.getElementById('txtTurmaIdGuilda').value;
+
+    if (!nome || !turmaId) {
+        alert('Nome da Guilda e ID da Turma são obrigatórios!');
+        return;
+    }
+
+    const parsedTurmaId = parseInt(turmaId);
+    if (isNaN(parsedTurmaId)) { alert('ID da Turma inválido.'); return; }
+
+    const guildaData = { nome: nome, turmaId: parsedTurmaId };
+    const result = await apiRequest('guildas', 'POST', guildaData);
+
+    if (result.success) {
+        alert(`Guilda "${result.data.nome}" criada com sucesso! ID: ${result.data.id}`);
+        document.getElementById('txtNomeGuilda').value = '';
+        document.getElementById('txtTurmaIdGuilda').value = '';
+        loadGuildas();
+    } else {
+        alert('Erro ao criar guilda: ' + result.error);
+    }
+}
+
+/**
+ * Atualiza uma guilda existente.
+ */
+async function updateGuilda() {
+    const guildaId = document.getElementById('txtIdGuildaAcao').value;
+    if (!guildaId) { alert('ID da Guilda é obrigatório para atualização.'); return; }
+    const parsedGuildaId = parseInt(guildaId);
+    if (isNaN(parsedGuildaId)) { alert('ID da Guilda inválido.'); return; }
+
+    const nome = document.getElementById('txtNomeGuilda').value;
+    const turmaId = document.getElementById('txtTurmaIdGuilda').value;
+
+    const updateData = {};
+    if (nome) updateData.nome = nome;
+    if (turmaId) {
+        const parsedTurmaId = parseInt(turmaId);
+        if (isNaN(parsedTurmaId)) { alert('ID da Turma inválido.'); return; }
+        updateData.turmaId = parsedTurmaId;
+    }
+
+    if (Object.keys(updateData).length === 0) {
+        alert('Nenhum campo preenchido para atualização da guilda.');
+        return;
+    }
+
+    const result = await apiRequest(`guildas/${parsedGuildaId}`, 'PUT', updateData);
+    if (result.success) {
+        alert(`Guilda ID ${parsedGuildaId} atualizada com sucesso!`);
+        document.getElementById('txtIdGuildaAcao').value = '';
+        document.getElementById('txtNomeGuilda').value = '';
+        document.getElementById('txtTurmaIdGuilda').value = '';
+        loadGuildas();
+    } else {
+        alert('Erro ao atualizar guilda: ' + result.error);
+    }
+}
+
+/**
+ * Deleta uma guilda existente.
+ */
+async function deleteGuilda() {
+    const guildaId = document.getElementById('txtIdGuildaAcao').value;
+    if (!guildaId) { alert('ID da Guilda é obrigatório para deletar.'); return; }
+    const parsedGuildaId = parseInt(guildaId);
+    if (isNaN(parsedGuildaId)) { alert('ID da Guilda inválido.'); return; }
+
+    if (!confirm(`Tem certeza que deseja deletar a guilda com ID ${parsedGuildaId}? Esta ação é irreversível e deletará ALUNOS associados!`)) {
+        return;
+    }
+
+    const result = await apiRequest(`guildas/${parsedGuildaId}`, 'DELETE');
+    if (result.success) {
+        alert(`Guilda ID ${parsedGuildaId} deletada com sucesso!`);
+        document.getElementById('txtIdGuildaAcao').value = '';
+        loadGuildas();
+    } else {
+        alert('Erro ao deletar guilda: ' + result.error);
+    }
+}
+
+/**
+ * Penaliza XP de uma guilda específica.
+ */
+async function penalizeGuildXp() {
+    const nomeGuilda = document.getElementById('txtNomeGuildaPenalizar').value;
+    const xpDeduction = parseInt(document.getElementById('txtXpDeductionGuilda').value);
+    const motivo = document.getElementById('txtMotivoPenalidadeGuilda').value;
+
+    if (!nomeGuilda || isNaN(xpDeduction) || xpDeduction <= 0) {
+        alert('Nome da Guilda e XP para deduzir (positivo) são obrigatórios.');
+        return;
+    }
+
+    const penalizeData = { xpDeduction: xpDeduction, motivo: motivo || null };
+    const result = await apiRequest(`guilds/${encodeURIComponent(nomeGuilda)}/penalize_xp`, 'POST', penalizeData);
+
+    if (result.success) {
+        alert(`Penalizado ${xpDeduction} XP da guilda "${nomeGuilda}".`);
+        document.getElementById('txtNomeGuildaPenalizar').value = '';
+        document.getElementById('txtXpDeductionGuilda').value = '';
+        document.getElementById('txtMotivoPenalidadeGuilda').value = '';
+        loadGuildas(); // Recarrega a lista para mostrar impacto (se tiver um aluno atualizado)
+        loadAlunos(); // Atualiza a aba de alunos, pois o XP dos alunos é afetado
+    } else {
+        alert('Erro ao penalizar XP da guilda: ' + result.error);
     }
 }
 
@@ -81,13 +346,13 @@ async function loadAlunos() {
                 row.insertCell().textContent = aluno.nome;
                 row.insertCell().textContent = aluno.apelido;
                 row.insertCell().textContent = aluno.guilda_id || 'N/A';
+                row.insertCell().textContent = aluno.guilda_nome || 'N/A'; // Alterado para guilda_nome
                 row.insertCell().textContent = aluno.xp;
                 row.insertCell().textContent = aluno.level;
                 row.insertCell().textContent = aluno.total_points;
                 row.insertCell().textContent = aluno.academic_score;
                 row.insertCell().textContent = aluno.badges ? aluno.badges.join(', ') : '';
-                row.insertCell().textContent = aluno.guilda_nome || 'N/A';
-                row.insertCell().textContent = aluno.turma_nome || 'N/A';
+                row.insertCell().textContent = aluno.turma_nome || 'N/A'; // Alterado para turma_nome
             });
         } else {
             tbody.innerHTML = '<tr><td colspan="11">Nenhum aluno cadastrado.</td></tr>';
@@ -303,13 +568,6 @@ async function addPontosAcademicos() {
 }
 
 
-// --- Funções de Lógica da Aba Turmas (Já implementadas) ---
-// loadTurmas, createTurma, updateTurma, deleteTurma
-
-// --- Funções de Lógica da Aba Guildas (Já implementadas) ---
-// loadGuildas, createGuilda, updateGuilda, deleteGuilda, penalizeGuildXp
-
-
 // --- Funções de Lógica da Aba Atividades ---
 
 async function loadAtividades() {
@@ -439,6 +697,33 @@ async function buscarAtividadePorCodigo() {
 
 // --- Funções de Lógica da Aba Matrículas/Progresso ---
 
+/**
+ * Função auxiliar para exibir uma lista de objetos de matrícula na tabela dgMatriculas.
+ * @param {Array<Object>} matriculasArray - Um array de objetos de matrícula.
+ */
+function displayMatriculasInTable(matriculasArray) {
+    const tbody = document.querySelector('#matriculas-tab #dgMatriculas tbody');
+    if (!tbody) return;
+    tbody.innerHTML = ''; // Limpa o conteúdo existente
+
+    if (matriculasArray && matriculasArray.length > 0) {
+        matriculasArray.forEach(matricula => {
+            const row = tbody.insertRow();
+            row.insertCell().textContent = matricula.id;
+            row.insertCell().textContent = matricula.aluno_id;
+            row.insertCell().textContent = matricula.atividade_id;
+            row.insertCell().textContent = matricula.score_in_quest;
+            row.insertCell().textContent = matricula.status;
+            // Estes campos não vêm diretamente na resposta de POST/PUT, mas vêm em GET de detalhes.
+            // Para consistência com a estrutura da tabela, adicionamos N/A se não existirem.
+            row.insertCell().textContent = matricula.aluno_nome || 'N/A';
+            row.insertCell().textContent = matricula.atividade_nome || 'N/A';
+        });
+    } else {
+        tbody.innerHTML = '<tr><td colspan="7">Nenhuma matrícula para exibir.</td></tr>';
+    }
+}
+
 async function createMatricula() {
     const alunoId = document.getElementById('txtAlunoIdMatricula').value;
     const atividadeId = document.getElementById('txtAtividadeIdMatricula').value;
@@ -466,6 +751,8 @@ async function createMatricula() {
         alert(`Matrícula criada com sucesso! ID: ${result.data.id}`);
         document.getElementById('txtAlunoIdMatricula').value = '';
         document.getElementById('txtAtividadeIdMatricula').value = '';
+        // Após criar uma matrícula individual, podemos exibir ela na tabela
+        displayMatriculasInTable([result.data]);
     } else {
         alert('Erro ao criar matrícula: ' + result.error);
     }
@@ -496,6 +783,7 @@ async function bulkMatriculaTurma() {
         alert(`${result.data.length} matrículas criadas/atualizadas para a turma com sucesso!`);
         document.getElementById('txtCursoIdBulk').value = '';
         document.getElementById('txtTurmaIdBulk').value = '';
+        displayMatriculasInTable(result.data); // Exibe os dados na tabela
     } else {
         alert('Erro ao matricular por turma: ' + result.error);
     }
@@ -526,6 +814,7 @@ async function bulkMatriculaGuilda() {
         alert(`${result.data.length} matrículas criadas/atualizadas para a guilda com sucesso!`);
         document.getElementById('txtCursoIdBulk').value = '';
         document.getElementById('txtGuildaIdBulk').value = '';
+        displayMatriculasInTable(result.data); // Exibe os dados na tabela
     } else {
         alert('Erro ao matricular por guilda: ' + result.error);
     }
@@ -548,6 +837,9 @@ async function completeMatricula() {
         alert(`Matrícula ID ${parsedMatriculaId} concluída com sucesso!`);
         document.getElementById('txtMatriculaIdComplete').value = '';
         document.getElementById('txtScoreQuest').value = '';
+        // Podemos tentar carregar os detalhes desta matrícula específica se o endpoint suportar
+        // Por enquanto, apenas o alerta, ou o usuário terá que buscar manualmente.
+        // displayMatriculasInTable([result.data]); // Se a API retornar a matrícula atualizada completa
     } else {
         alert('Erro ao concluir matrícula: ' + result.error);
     }
@@ -578,6 +870,7 @@ async function bulkCompleteGuilda() {
         document.getElementById('txtAtividadeIdBulkComplete').value = '';
         document.getElementById('txtGuildaIdBulkComplete').value = '';
         document.getElementById('txtScoreBulkCompleteGuild').value = '';
+        displayMatriculasInTable(result.data); // Exibe os dados na tabela
     } else {
         alert('Erro ao concluir matrículas em massa: ' + result.error);
     }
@@ -594,9 +887,12 @@ async function buscarMatriculasPorNomeAluno() {
     if (result.success && result.data) {
         tbody.innerHTML = '';
         // Este endpoint retorna um objeto com várias propriedades, não uma lista direta para a tabela
+        // O endpoint em si não retorna uma lista de objetos Matricula para preencher a tabela dgMatriculas
+        // Ele retorna um resumo das atividades matriculadas.
         alert(`Matrículas de ${result.data.aluno_nome || 'Aluno'} (Guilda: ${result.data.guilda_nome || 'N/A'}, Turma: ${result.data.turma_nome || 'N/A'})\nAtividades: ${result.data.atividades_matriculadas.join(', ')}`);
-        // Para exibir na tabela dgMatriculas, você precisaria de um array de objetos Matricula
+        // Para exibir na tabela dgMatriculas, seria necessário adaptar o formato dos dados ou o endpoint.
         // Por enquanto, apenas um alerta para mostrar que funcionou.
+        tbody.innerHTML = '<tr><td colspan="7">Resultado da busca por nome exibido no alerta. Use "Buscar Detalhes por ID Aluno" para preencher a tabela.</td></tr>';
     } else {
         alert('Erro ao buscar matrículas por nome: ' + result.error);
         tbody.innerHTML = `<tr><td colspan="7">Erro: ${result.error}</td></tr>`;
@@ -610,24 +906,15 @@ async function buscarDetalhesMatriculaPorId() {
     if (isNaN(parsedAlunoId)) { alert('ID do Aluno inválido.'); return; }
 
     const result = await apiRequest(`matriculas/aluno/${parsedAlunoId}/details`, 'GET');
-    const tbody = document.querySelector('#matriculas-tab #dgMatriculas tbody');
-    if (!tbody) return;
-
+    
     if (result.success && result.data) {
-        tbody.innerHTML = '';
-        result.data.forEach(matricula => {
-            const row = tbody.insertRow();
-            row.insertCell().textContent = matricula.id;
-            row.insertCell().textContent = matricula.aluno_id;
-            row.insertCell().textContent = matricula.atividade_id;
-            row.insertCell().textContent = matricula.score_in_quest;
-            row.insertCell().textContent = matricula.status;
-            row.insertCell().textContent = matricula.aluno_nome || 'N/A';
-            row.insertCell().textContent = matricula.atividade_nome || 'N/A';
-        });
+        displayMatriculasInTable(result.data); // Exibe os dados na tabela
     } else {
         alert('Erro ao buscar detalhes das matrículas: ' + result.error);
-        tbody.innerHTML = `<tr><td colspan="7">Erro: ${result.error}</td></tr>`;
+        const tbody = document.querySelector('#matriculas-tab #dgMatriculas tbody');
+        if (tbody) {
+            tbody.innerHTML = `<tr><td colspan="7">Erro: ${result.error}</td></tr>`;
+        }
     }
 }
 
@@ -641,14 +928,17 @@ async function buscarAlunosMatriculadosAtividade() {
 
     if (result.success && result.data && result.data.alunos) {
         tbody.innerHTML = '';
+        // Este endpoint retorna uma lista de alunos, não de matrículas.
+        // Adaptamos a exibição na tabela de matrículas para mostrar os alunos matriculados.
         result.data.alunos.forEach(aluno => {
             const row = tbody.insertRow();
-            row.insertCell().textContent = aluno.aluno_id;
-            row.insertCell().textContent = aluno.aluno_nome || 'N/A';
-            row.insertCell().textContent = aluno.aluno_apelido || 'N/A';
-            row.insertCell().textContent = aluno.guilda_nome || 'N/A';
-            row.insertCell().textContent = aluno.turma_nome || 'N/A';
-            // Preencher outras células conforme necessário para a tabela
+            row.insertCell().textContent = aluno.aluno_id; // Coluna ID da Matrícula (usamos ID do Aluno)
+            row.insertCell().textContent = aluno.aluno_nome || 'N/A'; // Coluna Aluno ID (usamos Nome do Aluno)
+            row.insertCell().textContent = result.data.atividade; // Coluna Atividade ID (usamos Nome da Atividade)
+            row.insertCell().textContent = 'N/A'; // Score
+            row.insertCell().textContent = 'N/A'; // Status
+            row.insertCell().textContent = aluno.guilda_nome || 'N/A'; // Aluno Nome (usamos Guilda Nome)
+            row.insertCell().textContent = aluno.turma_nome || 'N/A'; // Atividade Nome (usamos Turma Nome)
         });
         alert(`Alunos matriculados na atividade "${result.data.atividade}" carregados!`);
     } else {
@@ -854,6 +1144,29 @@ async function loadHistoricoTurma() {
     }
 }
 
+// --- NOVA FUNÇÃO PARA GERAR RELATÓRIO PDF ---
+async function generatePdfReport() {
+    alert('Gerando relatório PDF... Isso pode levar alguns segundos.');
+    const result = await apiRequest('relatorio-pdf', 'GET'); // Endpoint que você precisará criar no backend
+
+    if (result.success && result.isPdf) {
+        // Cria um link temporário para fazer o download do PDF
+        const url = window.URL.createObjectURL(result.data);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'Relatorio_Willow_Gamificacao.pdf'; // Nome do arquivo a ser baixado
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url); // Libera o URL do objeto
+        document.body.removeChild(a); // Remove o link temporário
+        alert('Relatório PDF gerado e baixado com sucesso!');
+    } else if (result.success && !result.isPdf) {
+        alert('A API não retornou um PDF. Verifique o backend.');
+    } else {
+        alert('Erro ao gerar relatório PDF: ' + result.error);
+    }
+}
+
 
 // --- Lógica de Inicialização e Event Listeners ---
 
@@ -889,8 +1202,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     loadAtividades();
                     break;
                 case 'matriculas':
-                    // loadMatriculas(); // Matrículas são carregadas por busca específica, não geral
-                    document.querySelector('#matriculas-tab #dgMatriculas tbody').innerHTML = '<tr><td colspan="7">Use as opções de busca na seção "Buscar Matrículas" para carregar.</td></tr>';
+                    // Limpa a tabela e exibe uma mensagem ou apenas a deixa vazia
+                    document.querySelector('#matriculas-tab #dgMatriculas tbody').innerHTML = '<tr><td colspan="7">Use as opções para criar ou buscar matrículas.</td></tr>';
                     break;
                 case 'rankings':
                     // loadLeaderboardGeral(); // Carrega Leaderboard Geral por padrão na aba Rankings
@@ -958,4 +1271,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('btnAlunosPorGuilda')?.addEventListener('click', loadAlunosPorGuilda);
     document.getElementById('btnHistoricoAluno')?.addEventListener('click', loadHistoricoAluno);
     document.getElementById('btnHistoricoTurma')?.addEventListener('click', loadHistoricoTurma);
+    
+    // NOVO: Adicionar evento de clique para o botão Gerar Relatório PDF
+    document.getElementById('btnGerarRelatorioPdf')?.addEventListener('click', generatePdfReport);
 });

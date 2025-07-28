@@ -76,6 +76,7 @@ h1, h2, h3 {
 .input-section, .specific-actions-section {
     flex: 1;
     min-width: 300px;
+    max-width: 600px; /* Aumentado para 600px para todas as seções de input e ações */
     background-color: #f8f9fa;
     padding: 15px;
     border-radius: 5px;
@@ -92,10 +93,12 @@ h1, h2, h3 {
     font-weight: bold;
 }
 
+/* PADRONIZAÇÃO DO TAMANHO DAS BARRAS DE INPUT */
 .form-group input[type="text"],
 .form-group input[type="number"],
 .form-group textarea {
-    width: calc(100% - 10px);
+    width: calc(100% - 10px); /* Mantém o preenchimento da largura do pai */
+    max-width: 580px; /* Aumenta a largura máxima dos inputs dentro da seção maior */
     padding: 8px;
     border: 1px solid #ced4da;
     border-radius: 4px;
@@ -139,6 +142,14 @@ h1, h2, h3 {
 .data-display-section th {
     background-color: #f2f2f2;
     font-weight: bold;
+}
+
+/* Estilo para os ícones de badge */
+.badge-icon {
+    width: 20px; /* Tamanho do ícone */
+    height: 20px;
+    vertical-align: middle; /* Alinha verticalmente com o texto */
+    margin-right: 5px; /* Espaçamento à direita do ícone */
 }
 
 .footer {

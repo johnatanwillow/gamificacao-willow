@@ -7,6 +7,9 @@ from sqlalchemy import func
 from typing import List, Dict, Union, Optional
 import json # Importação necessária para json.loads()
 
+from fpdf import FPDF # NOVO: Importação para gerar PDF
+from fastapi.responses import StreamingResponse # NOVO: Para retornar o PDF
+
 # Importações atualizadas para Turma e Guilda
 from schemas import (
     Aluno,
@@ -126,6 +129,8 @@ def _load_turma_for_response(db_turma_obj: ModelTurma) -> Turma:
 
     # Processa guildas aninhadas usando _load_guilda_for_response
     if db_turma_obj.guildas:
+        # Removida a linha 'db.refresh(guilda)' daqui, que causava o NameError.
+        # As guildas e seus alunos já devem estar carregados via joinedload na query principal.
         turma_data_dict['guildas'] = [_load_guilda_for_response(guilda) for guilda in db_turma_obj.guildas]
     
     return Turma.model_validate(turma_data_dict)
@@ -555,7 +560,7 @@ def award_badge_to_aluno(aluno_id: int, badge_data: BadgeAwardRequest, db: Sessi
             aluno_id=db_aluno.id,
             tipo_transacao="concessao_badge_manual",
             valor_xp_alterado=0, # Badges não alteram XP diretamente neste ponto
-            valor_pontos_alterado=0.0, # Badges não alteram pontos diretamente neste ponto
+            valor_pontos_alterado=0.0, # Badges não alteram pontos directamente neste ponto
             motivo=motivo,
             referencia_entidade="badge", # Entidade de referência para o histórico
             referencia_id=None
@@ -586,12 +591,12 @@ def get_guild_leaderboard(db: Session = Depends(get_db)):
     guild_scores = db.query(
         ModelGuilda.id,
         ModelGuilda.nome,
-        ModelTurma.nome,
+        ModelTurma.nome.label("turma_nome"), # CORREÇÃO AQUI: Alias explícito para o nome da turma
         func.sum(ModelAluno.xp).label("total_xp")
     ).join(ModelAluno, ModelGuilda.id == ModelAluno.guilda_id).join(ModelTurma, ModelGuilda.turma_id == ModelTurma.id).group_by(ModelGuilda.id, ModelGuilda.nome, ModelTurma.nome).order_by(func.sum(ModelAluno.xp).desc()).all()
 
     guild_leaderboard = [
-        {"guilda_id": entry.id, "guilda_nome": entry.nome, "turma_nome": entry.nome_2, "total_xp": entry.total_xp}
+        {"guilda_id": entry.id, "guilda_nome": entry.nome, "turma_nome": entry.turma_nome, "total_xp": entry.total_xp} # CORREÇÃO AQUI: Acessa via 'turma_nome'
         for entry in guild_scores
     ]
 
@@ -617,66 +622,157 @@ def read_alunos_by_guild(guild_name: str, db: Session = Depends(get_db)):
 
     return [_load_aluno_for_response(aluno) for aluno in db_alunos]
 
-@alunos_router.post("/alunos/{aluno_id}/add_quest_academic_points", response_model=Aluno)
-def add_quest_academic_points(aluno_id: int, quest_completion_data: QuestCompletionPoints, db: Session = Depends(get_db)):
+# NOVO ENDPOINT: Gerar Relatório PDF Completo
+@alunos_router.get("/relatorio-pdf", tags=["Relatórios"])
+async def gerar_relatorio_pdf_completo(db: Session = Depends(get_db)):
     """
-    Adiciona pontos acadêmicos a um aluno com base na conclusão de uma quest, com motivo.
+    Gera um relatório completo do sistema (turmas, guildas, alunos, rankings, atividades) em PDF.
     """
-    db_aluno = db.query(ModelAluno).options(joinedload(ModelAluno.guilda_obj).joinedload(ModelGuilda.turma)).filter(ModelAluno.id == aluno_id).first()
-    if db_aluno is None:
-        raise HTTPException(status_code=404, detail="Aluno não encontrado")
-
-    db_atividade = db.query(ModelAtividade).filter(ModelAtividade.codigo == quest_completion_data.quest_code).first()
-    if db_atividade is None:
-        raise HTTPException(status_code=404, detail=f"Atividade com código '{quest_completion_data.quest_code}' não encontrada.")
-
-    pontos_adicionados = db_atividade.points_on_completion
-    db_aluno.academic_score += pontos_adicionados
-
-    motivo_registro = quest_completion_data.motivo if quest_completion_data.motivo else f"Pontos Acadêmicos por Atividade '{db_atividade.nome}' ({db_atividade.codigo})"
-
-    historico_registro = HistoricoXPPonto(
-        aluno_id=db_aluno.id,
-        tipo_transacao="ganho_pontos_academicos_manual_atividade",
-        valor_xp_alterado=0,
-        valor_pontos_alterado=pontos_adicionados,
-        motivo=motivo_registro,
-        referencia_entidade="atividade",
-        referencia_id=db_atividade.id
-    )
-    db.add(historico_registro)
+    pdf = FPDF()
+    pdf.add_page()
     
-    db.commit()
-    db.refresh(db_aluno)
-    return _load_aluno_for_response(db_aluno)
+    # Adicionar suporte a fontes Unicode ou usar fontes que suportem caracteres especiais se necessário
+    # pdf.add_font('DejaVuSans', '', 'DejaVuSansCondensed.ttf', uni=True)
+    # pdf.set_font('DejaVuSans', size=12)
 
-@alunos_router.post("/alunos/{aluno_id}/award_badge", response_model=Aluno)
-def award_badge_to_aluno(aluno_id: int, badge_data: BadgeAwardRequest, db: Session = Depends(get_db)):
-    """
-    Concede um distintivo (badge) a um aluno, se ele ainda não o possuir, e registra o motivo.
-    Este é um método manual/direto de concessão de badge, separado da evolução por nível.
-    """
-    db_aluno = db.query(ModelAluno).options(joinedload(ModelAluno.guilda_obj).joinedload(ModelGuilda.turma)).filter(ModelAluno.id == aluno_id).first()
-    if db_aluno is None:
-        raise HTTPException(status_code=404, detail="Aluno não encontrado")
+    # Usando fonte padrão que suporta caracteres básicos para esta demonstração
+    pdf.set_font("Arial", size=16, style='B')
+    pdf.cell(0, 10, txt="Relatório Completo do Sistema WILLOW de Gamificação", ln=True, align="C")
+    pdf.ln(10)
 
-    badge_name = badge_data.badge_name
-    motivo = badge_data.motivo if badge_data.motivo else f"Concessão manual do distintivo '{badge_name}'"
-
-    if _award_badge_if_new(db_aluno, badge_name, db):
-        historico_registro = HistoricoXPPonto(
-            aluno_id=db_aluno.id,
-            tipo_transacao="concessao_badge_manual",
-            valor_xp_alterado=0, # Badges não alteram XP diretamente neste ponto
-            valor_pontos_alterado=0.0, # Badges não alteram pontos directamente neste ponto
-            motivo=motivo,
-            referencia_entidade="badge", # Entidade de referência para o histórico
-            referencia_id=None
-        )
-        db.add(historico_registro)
-        db.commit()
-        db.refresh(db_aluno)
+    # --- Seção de Turmas ---
+    pdf.set_font("Arial", size=14, style='B')
+    pdf.cell(0, 10, txt="1. Turmas e suas Guildas/Alunos", ln=True, align="L")
+    pdf.set_font("Arial", size=10)
+    turmas = db.query(ModelTurma).options(
+        joinedload(ModelTurma.guildas).joinedload(ModelGuilda.alunos)
+    ).all()
+    if turmas:
+        for turma in turmas:
+            pdf.set_font("Arial", size=12, style='B')
+            pdf.cell(0, 7, txt=f"Turma: {turma.nome} (Ano: {turma.ano if turma.ano else 'N/A'}) [ID: {turma.id}]", ln=True)
+            if turma.guildas:
+                pdf.set_font("Arial", size=11, style='I')
+                pdf.cell(0, 7, txt="  Guildas:", ln=True)
+                for guilda in turma.guildas:
+                    pdf.set_font("Arial", size=10)
+                    pdf.cell(0, 6, txt=f"    - {guilda.nome} [ID: {guilda.id}]", ln=True)
+                    if guilda.alunos:
+                        pdf.set_font("Arial", size=9)
+                        for aluno in guilda.alunos:
+                            pdf.cell(0, 5, txt=f"      * {aluno.nome} ({aluno.apelido or 'S/Apelido'}) - XP: {aluno.xp} - Nível: {aluno.level} (Pontos: {aluno.total_points})", ln=True)
+                            if aluno.badges:
+                                try:
+                                    badges_list = json.loads(aluno.badges)
+                                    if isinstance(badges_list, list):
+                                        pdf.cell(0, 5, txt=f"        Badges: {', '.join(badges_list)}", ln=True)
+                                except (json.JSONDecodeError, TypeError):
+                                    pdf.cell(0, 5, txt="        Badges: (Formato inválido)", ln=True)
+                            else:
+                                pdf.cell(0, 5, txt="        Badges: Nenhum", ln=True)
+                        pdf.ln(1)
+                    else:
+                        pdf.set_font("Arial", size=9)
+                        pdf.cell(0, 5, txt="      (Nenhum aluno nesta guilda)", ln=True)
+                pdf.ln(3)
+            else:
+                pdf.set_font("Arial", size=10)
+                pdf.cell(0, 7, txt="  (Nenhuma guilda nesta turma)", ln=True)
+            pdf.ln(5)
     else:
-        pass
+        pdf.set_font("Arial", size=10)
+        pdf.cell(0, 10, txt="Nenhuma turma cadastrada.", ln=True)
+    
+    pdf.add_page() # Adiciona nova página para Leaderboards se necessário
+    pdf.set_font("Arial", size=16, style='B')
+    pdf.cell(0, 10, txt="Relatório Completo do Sistema WILLOW de Gamificação", ln=True, align="C")
+    pdf.ln(10)
 
-    return _load_aluno_for_response(db_aluno)
+    # --- Seção de Leaderboard Geral (Top 20 Alunos) ---
+    pdf.set_font("Arial", size=14, style='B')
+    pdf.cell(0, 10, txt="2. Leaderboard Geral (Top 20 Alunos)", ln=True, align="L")
+    pdf.set_font("Arial", size=10)
+    leaderboard = db.query(ModelAluno).options(joinedload(ModelAluno.guilda_obj).joinedload(ModelGuilda.turma)).order_by(ModelAluno.xp.desc()).limit(20).all() 
+    if leaderboard:
+        # Tabela para Leaderboard
+        col_widths = [15, 55, 20, 20, 50, 25] # ID, Nome, XP, Nível, Guilda(Turma), Pontos Totais
+        pdf.set_font("Arial", size=9, style='B')
+        pdf.cell(col_widths[0], 7, "ID", 1, 0, 'C')
+        pdf.cell(col_widths[1], 7, "Nome (Apelido)", 1, 0, 'C')
+        pdf.cell(col_widths[2], 7, "XP", 1, 0, 'C')
+        pdf.cell(col_widths[3], 7, "Nível", 1, 0, 'C')
+        pdf.cell(col_widths[4], 7, "Guilda (Turma)", 1, 0, 'C')
+        pdf.cell(col_widths[5], 7, "Pts Totais", 1, 1, 'C') # ln=1 para nova linha
+
+        pdf.set_font("Arial", size=9)
+        for aluno in leaderboard:
+            guild_turma = f"{aluno.guilda_obj.nome} ({aluno.guilda_obj.turma.nome})" if aluno.guilda_obj and aluno.guilda_obj.turma else "N/A"
+            pdf.cell(col_widths[0], 7, str(aluno.id), 1, 0, 'C')
+            pdf.cell(col_widths[1], 7, f"{aluno.nome} ({aluno.apelido or '-'})", 1, 0, 'L')
+            pdf.cell(col_widths[2], 7, str(aluno.xp), 1, 0, 'C')
+            pdf.cell(col_widths[3], 7, str(aluno.level), 1, 0, 'C')
+            pdf.cell(col_widths[4], 7, guild_turma, 1, 0, 'L')
+            pdf.cell(col_widths[5], 7, str(aluno.total_points), 1, 1, 'C') # ln=1 para nova linha
+    else:
+        pdf.set_font("Arial", size=10)
+        pdf.cell(0, 10, txt="Nenhum aluno no leaderboard.", ln=True)
+    pdf.ln(10)
+
+    # --- Seção de Leaderboard por Guilda ---
+    pdf.set_font("Arial", size=14, style='B')
+    pdf.cell(0, 10, txt="3. Leaderboard por Guilda", ln=True, align="L")
+    pdf.set_font("Arial", size=10)
+    guild_scores = db.query(
+        ModelGuilda.id,
+        ModelGuilda.nome,
+        ModelTurma.nome.label("turma_nome"), # CORREÇÃO AQUI: Alias explícito para o nome da turma
+        func.sum(ModelAluno.xp).label("total_xp")
+    ).join(ModelAluno, ModelGuilda.id == ModelAluno.guilda_id).join(ModelTurma, ModelGuilda.turma_id == ModelTurma.id).group_by(ModelGuilda.id, ModelGuilda.nome, ModelTurma.nome).order_by(func.sum(ModelAluno.xp).desc()).all()
+
+    if guild_scores:
+        col_widths = [15, 60, 40, 40] # ID, Nome Guilda, Turma, Total XP
+        pdf.set_font("Arial", size=9, style='B')
+        pdf.cell(col_widths[0], 7, "ID", 1, 0, 'C')
+        pdf.cell(col_widths[1], 7, "Guilda", 1, 0, 'C')
+        pdf.cell(col_widths[2], 7, "Turma", 1, 0, 'C')
+        pdf.cell(col_widths[3], 7, "Total XP", 1, 1, 'C') # ln=1 para nova linha
+        
+        pdf.set_font("Arial", size=9)
+        for entry in guild_scores:
+            pdf.cell(col_widths[0], 7, str(entry.id), 1, 0, 'C')
+            pdf.cell(col_widths[1], 7, entry.nome, 1, 0, 'L')
+            pdf.cell(col_widths[2], 7, entry.turma_nome, 1, 0, 'L') # CORREÇÃO AQUI: Acessa via 'turma_nome'
+            pdf.cell(col_widths[3], 7, str(entry.total_xp), 1, 1, 'C') # ln=1 para nova linha
+    else:
+        pdf.set_font("Arial", size=10)
+        pdf.cell(0, 10, txt="Nenhuma guilda com XP registrada.", ln=True)
+    pdf.ln(10)
+
+    # --- Seção de Atividades ---
+    pdf.set_font("Arial", size=14, style='B')
+    pdf.cell(0, 10, txt="4. Atividades Cadastradas", ln=True, align="L")
+    pdf.set_font("Arial", size=10)
+    atividades = db.query(ModelAtividade).all()
+    if atividades:
+        for atividade in atividades:
+            pdf.set_font("Arial", size=11, style='B')
+            pdf.cell(0, 7, txt=f"Código: {atividade.codigo} - {atividade.nome}", ln=True)
+            pdf.set_font("Arial", size=10)
+            pdf.multi_cell(0, 5, txt=f"  Descrição: {atividade.descricao}")
+            pdf.cell(0, 5, txt=f"  XP ao Concluir: {atividade.xp_on_completion} | Pontos ao Concluir: {atividade.points_on_completion}", ln=True)
+            pdf.ln(2)
+    else:
+        pdf.set_font("Arial", size=10)
+        pdf.cell(0, 10, txt="Nenhuma atividade cadastrada.", ln=True)
+    pdf.ln(10)
+
+    # Gera o PDF como bytes
+    # Usar 'latin-1' para compatibilidade se não houver caracteres muito complexos
+    pdf_bytes = pdf.output(dest='S') # CORREÇÃO AQUI: Removido .encode('latin-1')
+
+    # Retorna o PDF como um StreamingResponse
+    return StreamingResponse(
+        iter([pdf_bytes]),
+        media_type="application/pdf",
+        headers={"Content-Disposition": "attachment; filename=relatorio_completo_willow.pdf"}
+    )
