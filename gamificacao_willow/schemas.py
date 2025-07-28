@@ -1,3 +1,6 @@
+# Arquivo: gamificacao_willow/schemas.py
+# Substitua TODO o conteúdo deste arquivo pelo código abaixo.
+
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from datetime import datetime
@@ -15,7 +18,10 @@ Matriculas = List[Matricula]
 
 class TurmaBase(BaseModel):
     nome: str
-    ano: Optional[int] = None # 
+    ano: Optional[str] = None # Ex: "3", "7", "8" ou "3° Ano", para indicar o ano da série
+
+    class Config: # <--- Adicionado: Certifique-se que Config está aqui
+        from_attributes = True
 
 class TurmaCreate(TurmaBase):
     pass
@@ -27,10 +33,9 @@ class Turma(TurmaBase):
     class Config:
         from_attributes = True
 
-# NOVO SCHEMA: TurmaUpdate
 class TurmaUpdate(BaseModel):
     nome: Optional[str] = None
-    ano: Optional[int] = None
+    ano: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -39,25 +44,29 @@ class GuildaBase(BaseModel):
     nome: str
     turma_id: int # ID da Turma a qual esta Guilda pertence
 
+    class Config: # <--- Adicionado: Certifique-se que Config está aqui
+        from_attributes = True
+
 class GuildaCreate(GuildaBase):
     pass
 
 class Guilda(GuildaBase):
     id: int
-    turma: Optional[TurmaBase] = None 
-    alunos: List["Aluno"] = [] 
+    turma: Optional[TurmaBase] = None
+    alunos: List["Aluno"] = [] # Relação para carregar alunos na resposta da guilda
 
     class Config:
         from_attributes = True
 
 class GuildaUpdate(BaseModel):
     nome: Optional[str] = None
-    turma_id: Optional[int] = None 
+    turma_id: Optional[int] = None
 
     class Config:
         from_attributes = True
 
 class Aluno(BaseModel):
+    id: int # ID do aluno
     nome: str
     apelido: Optional[str] = None
     guilda_id: Optional[int] = None
@@ -66,25 +75,39 @@ class Aluno(BaseModel):
     total_points: Optional[int] = 0
     badges: Optional[List[str]] = []
     academic_score: Optional[float] = 0.0
-    
-    guilda_nome: Optional[str] = None
-    turma_nome: Optional[str] = None
+
+    guilda_nome: Optional[str] = None # Campo para a resposta, não para entrada
+    turma_nome: Optional[str] = None # Campo para a resposta, não para entrada
 
     class Config:
         from_attributes = True
 
 Alunos = List[Aluno]
 
+# NOVO SCHEMA: AlunoCreateRequest - Para o corpo da requisição POST /alunos
+class AlunoCreateRequest(BaseModel):
+    nome: str
+    apelido: Optional[str] = None
+    nome_guilda: Optional[str] = None # Campo para o nome da guilda na criação
+    xp: Optional[int] = 0
+    level: Optional[int] = 1
+    total_points: Optional[int] = 0
+    badges: Optional[List[str]] = []
+    academic_score: Optional[float] = 0.0
+
+    class Config:
+        from_attributes = True
+
 class AlunoUpdate(BaseModel):
     nome: Optional[str] = None
     apelido: Optional[str] = None
-    guilda_id: Optional[int] = None 
+    guilda_id: Optional[int] = None
     xp: Optional[int] = None
     level: Optional[int] = None
     total_points: Optional[int] = None
     badges: Optional[List[str]] = None
-    academic_score: Optional[float] = None 
-    motivo: Optional[str] = None 
+    academic_score: Optional[float] = None
+    motivo: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -102,24 +125,23 @@ class Atividade(BaseModel):
 Atividade = List[Atividade]
 
 class GuildLeaderboardEntry(BaseModel):
-    guilda_id: int # Referencia a Guilda por ID
-    guilda_nome: str # Nome da guilda para exibição
-    turma_nome: Optional[str] = None # Nome da turma para exibição
+    guilda_id: int
+    guilda_nome: str
+    turma_nome: Optional[str] = None
     total_xp: int
 
 class BulkMatriculaCreate(BaseModel):
     curso_id: int
-    guilda_id: int 
+    guilda_id: int
 
 class BulkMatriculaByTurmaCreate(BaseModel):
     curso_id: int
     turma_id: int
 
-# NOVO SCHEMA: BulkCompleteMatriculaGuildRequest
 class BulkCompleteMatriculaGuildRequest(BaseModel):
     atividade_id: int
     guilda_id: int
-    score: int # Score a ser aplicado para todos os alunos na guilda
+    score: int
 
 class XPDeductionRequest(BaseModel):
     xp_deduction: int
@@ -129,7 +151,7 @@ class GuildPenalizationRequest(BaseModel):
     xp_deduction: int
     motivo: Optional[str] = None
 
-class QuestCompletionPoints(BaseModel): 
+class QuestCompletionPoints(BaseModel):
     quest_code: str
     motivo: Optional[str] = None
 
@@ -169,9 +191,6 @@ class BadgeAwardRequest(BaseModel):
     badge_name: str
     motivo: Optional[str] = None
 
-# Atualiza a referência forward para Turma no schema Guilda
 Guilda.model_rebuild()
-# Atualiza a referência forward para Guilda no schema Turma
 Turma.model_rebuild()
-# Atualiza a referência forward para Aluno no schema Guilda
 Aluno.model_rebuild()

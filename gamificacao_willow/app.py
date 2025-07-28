@@ -1,22 +1,49 @@
+# Arquivo: gamificacao_willow/app.py
+# Apague todo o conteúdo atual e cole este código.
+
 from fastapi import FastAPI
-from database import engine, Base
+from fastapi.middleware.cors import CORSMiddleware
+
+from database import Base, engine
 from routers.alunos import alunos_router
-from routers.atividades import atividades_router
-from routers.matriculas import matriculas_router
 
-
+# Cria todas as tabelas no banco de dados, se ainda não existirem
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
-    title="JWL - JOHNATAN WILLOW LANGUAGES - GAMIFICACAO", 
-    description="""
-        Esta API fornece endpoints para gerenciar alunos, XP, badges e outros recursos de gamificacao.  
-        
-        Permite realizar diferentes operações em cada uma dessas entidades.
-    """, 
+    title="API de Gamificação WILLOW",
+    description="API para gerenciar alunos, turmas, guildas e gamificação no ambiente educacional WILLOW.",
     version="1.0.0",
+    docs_url="/documentacao",
+    redoc_url=None
 )
 
-app.include_router(alunos_router, tags=["alunos"])
-app.include_router(atividades_router, tags=["atividades"])
-app.include_router(matriculas_router, tags=["matriculas"])
+# --- Adicionado/Atualizado: Configuração do CORSMiddleware para desenvolvimento local ---
+# Permitir todas as origens (temporariamente para desenvolvimento)
+# Ou definir explicitamente as origens, incluindo o protocolo 'file://'
+origins = [
+    "http://localhost",
+    "http://localhost:8000", # Se o frontend estiver rodando na mesma porta do backend (improvável, mas para segurança)
+    "http://127.0.0.1",
+    "http://127.0.0.1:8000",
+    "null", # <--- CRUCIAL: Permite origens nulas (para arquivos abertos diretamente do sistema de arquivos)
+    "file://", # <--- Adiciona explicitamente o protocolo file://
+    "http://0.0.0.0:8000", # Para algumas configurações de Docker ou rede
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],            # <--- ALTERADO PARA "*" para permitir QUALQUER origem em desenvolvimento
+    allow_credentials=True,
+    allow_methods=["*"],            # Permitir todos os métodos (GET, POST, PUT, DELETE, OPTIONS)
+    allow_headers=["*"],            # Permitir todos os cabeçalhos
+)
+# --- Fim da Configuração do CORSMiddleware ---
+
+
+# Inclui os roteadores da aplicação
+app.include_router(alunos_router)
+
+@app.get("/")
+async def read_root():
+    return {"message": "Bem-vindo à API de Gamificação WILLOW!"}

@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Gamificação WILLOW</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Sistema de Gamificação WILLOW</h1>
+
+        <div class="tabs">
+            <div class="tab-header">
+                <button class="tab-button active" data-tab="turmas">Turmas</button>
+                <button class="tab-button" data-tab="guildas">Guildas</button>
+                <button class="tab-button" data-tab="alunos">Alunos</button>
+                <button class="tab-button" data-tab="atividades">Atividades</button>
+                <button class="tab-button" data-tab="matriculas">Matrículas/Progresso</button>
+                <button class="tab-button" data-tab="rankings">Rankings/Históricos</button>
+            </div>
+
+            <div id="turmas-tab" class="tab-content active">
+                <div class="main-content">
+                    <h2>Gerenciamento de Turmas</h2>
+                    <div class="turma-form-container">
+                        <div class="input-section">
+                            <h3>Dados da Turma</h3>
+                            <div class="form-group">
+                                <label for="txtNomeTurma">Nome da Turma:</label>
+                                <input type="text" id="txtNomeTurma">
+                            </div>
+                            <div class="form-group">
+                                <label for="txtAnoTurma">Ano da Turma (Ex: 3, 7, 8):</label>
+                                <input type="text" id="txtAnoTurma">
+                            </div>
+                            <div class="form-group">
+                                <label for="txtIdTurmaAcao">ID da Turma (p/ Atualizar/Deletar):</label>
+                                <input type="number" id="txtIdTurmaAcao">
+                            </div>
+                        </div>
+                        <div class="action-buttons-group">
+                            <button id="btnCriarTurma" class="btn">Criar Turma</button>
+                            <button id="btnAtualizarTurma" class="btn">Atualizar Turma</button>
+                            <button id="btnDeletarTurma" class="btn">Deletar Turma</button>
+                            <button id="btnCarregarTurmas" class="btn">Listar Todas as Turmas</button>
+                        </div>
+                    </div>
+                    <h3>Dados das Turmas</h3>
+                    <div class="data-display-section">
+                        <table id="dgTurmas">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Nome da Turma</th>
+                                    <th>Ano</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div id="guildas-tab" class="tab-content">
+                <div class="main-content">
+                    <h2>Gerenciamento de Guildas</h2>
+                    <div class="guilda-form-container">
+                        <div class="input-section">
+                            <h3>Dados da Guilda</h3>
+                            <div class="form-group">
+                                <label for="txtNomeGuilda">Nome da Guilda:</label>
+                                <input type="text" id="txtNomeGuilda">
+                            </div>
+                            <div class="form-group">
+                                <label for="txtTurmaIdGuilda">ID da Turma:</label>
+                                <input type="number" id="txtTurmaIdGuilda">
+                            </div>
+                            <div class="form-group">
+                                <label for="txtIdGuildaAcao">ID da Guilda (p/ Atualizar/Deletar):</label>
+                                <input type="number" id="txtIdGuildaAcao">
+                            </div>
+                        </div>
+                        <div class="action-buttons-group">
+                            <button id="btnCriarGuilda" class="btn">Criar Guilda</button>
+                            <button id="btnAtualizarGuilda" class="btn">Atualizar Guilda</button>
+                            <button id="btnDeletarGuilda" class="btn">Deletar Guilda</button>
+                            <button id="btnCarregarGuildas" class="btn">Listar Todas as Guildas</button>
+                        </div>
+                        <div class="specific-actions-section">
+                            <h3>Ações Específicas de Guilda</h3>
+                            <div class="form-group">
+                                <label for="txtNomeGuildaPenalizar">Nome da Guilda p/ Penalizar:</label>
+                                <input type="text" id="txtNomeGuildaPenalizar">
+                            </div>
+                            <div class="form-group">
+                                <label for="txtXpDeductionGuilda">Quantidade XP para Deduzir:</label>
+                                <input type="number" id="txtXpDeductionGuilda">
+                            </div>
+                            <div class="form-group">
+                                <label for="txtMotivoPenalidadeGuilda">Motivo da Penalidade:</label>
+                                <textarea id="txtMotivoPenalidadeGuilda" rows="3"></textarea>
+                            </div>
+                            <button id="btnPenalizarXpGuilda" class="btn">Penalizar XP (Guilda)</button>
+                        </div>
+                    </div>
+                    <h3>Dados das Guildas</h3>
+                    <div class="data-display-section">
+                        <table id="dgGuildas">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Nome da Guilda</th>
+                                    <th>ID da Turma</th>
+                                    <th>Nome da Turma</th>
+                                    <th>Ano da Turma</th> </tr>
+                            </thead>
+                            <tbody>
+                                </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div id="alunos-tab" class="tab-content">
+                <div class="main-content">
+                    <h2>Gerenciamento de Alunos</h2>
+                    <div class="aluno-form-container">
+                        <div class="input-section">
+                            <h3>Dados do Aluno</h3>
+                            <div class="form-group">
+                                <label for="txtNomeAluno">Nome:</label>
+                                <input type="text" id="txtNomeAluno" value="Johnatan Willow">
+                            </div>
+                            <div class="form-group">
+                                <label for="txtApelidoAluno">Apelido:</label>
+                                <input type="text" id="txtApelidoAluno" value="johnwill">
+                            </div>
+                            <div class="form-group">
+                                <label for="txtNomeGuildaAluno">Nome da Guilda:</label>
+                                <input type="text" id="txtNomeGuildaAluno" value="Feras">
+                            </div>
+                            <div class="form-group">
+                                <label for="txtXpAluno">XP Inicial:</label>
+                                <input type="number" id="txtXpAluno" value="0">
+                            </div>
+                            <div class="form-group">
+                                <label for="txtTotalPointsAluno">Pontos Totais:</label>
+                                <input type="number" id="txtTotalPointsAluno" value="0">
+                            </div>
+                            <div class="form-group">
+                                <label for="txtAcademicScoreAluno">Pontos Acadêmicos:</label>
+                                <input type="number" step="0.1" id="txtAcademicScoreAluno" value="0.0">
+                            </div>
+                            <div class="form-group">
+                                <label for="txtBadgesAluno">Badges (separados por vírgula):</label>
+                                <input type="text" id="txtBadgesAluno" value="Explorador Iniciante">
+                            </div>
+                        </div>
+
+                        <div class="action-buttons-group">
+                            <button id="btnCriarAluno" class="btn">Criar Aluno</button>
+                            <button id="btnAtualizarAluno" class="btn">Atualizar Aluno</button>
+                            <button id="btnDeletarAluno" class="btn">Deletar Aluno</button>
+                            <button id="btnCarregarAlunos" class="btn">Listar Todos os Alunos</button>
+                        </div>
+
+                        <div class="specific-actions-section">
+                            <h3>Ações Específicas de Aluno</h3>
+                            <div class="form-group">
+                                <label for="txtAlunoIdAcao">ID do Aluno para Ação:</label>
+                                <input type="number" id="txtAlunoIdAcao">
+                            </div>
+                            <div class="form-group">
+                                <label for="txtXpAmount">Quantidade XP:</label>
+                                <input type="number" id="txtXpAmount">
+                            </div>
+                            <div class="form-group-buttons">
+                                <button id="btnAddXp" class="btn">Adicionar XP</button>
+                                <button id="btnPenalizarXpAluno" class="btn">Penalizar XP (Aluno)</button>
+                            </div>
+                            <div class="form-group">
+                                <label for="txtBadgeName">Nome do Badge:</label>
+                                <input type="text" id="txtBadgeName">
+                            </div>
+                            <button id="btnConcederBadge" class="btn">Conceder Distintivo</button>
+                            <div class="form-group">
+                                <label for="txtQuestCodePontos">Cód. da Quest (p/ Pontos Acadêmicos):</label>
+                                <input type="text" id="txtQuestCodePontos">
+                            </div>
+                            <button id="btnAddPontosAcademicos" class="btn">Adicionar Pontos Acadêmicos</button>
+                            <div class="form-group">
+                                <label for="txtMotivoAcao">Motivo da Ação:</label>
+                                <textarea id="txtMotivoAcao" rows="3"></textarea>
+                            </div>
+                        </div>
+                    </div>
+
+                    <h3>Dados dos Alunos</h3>
+                    <div class="data-display-section">
+                        <table id="dgAlunos">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Nome</th>
+                                    <th>Apelido</th>
+                                    <th>Guilda ID</th>
+                                    <th>Nome Guilda</th>
+                                    <th>XP</th>
+                                    <th>Level</th>
+                                    <th>Pontos Totais</th>
+                                    <th>Academic Score</th>
+                                    <th>Badges</th>
+                                    <th>Nome Turma</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="atividades-tab" class="tab-content">
+                <div class="main-content">
+                    <h2>Gerenciamento de Atividades</h2>
+                    <div class="atividade-form-container">
+                        <div class="input-section">
+                            <h3>Dados da Atividade</h3>
+                            <div class="form-group">
+                                <label for="txtNomeAtividade">Nome da Atividade:</label>
+                                <input type="text" id="txtNomeAtividade">
+                            </div>
+                            <div class="form-group">
+                                <label for="txtCodigoAtividade">Código da Atividade:</label>
+                                <input type="text" id="txtCodigoAtividade">
+                            </div>
+                            <div class="form-group">
+                                <label for="txtDescricaoAtividade">Descrição:</label>
+                                <textarea id="txtDescricaoAtividade" rows="3"></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label for="txtXpOnCompletion">XP ao Concluir:</label>
+                                <input type="number" id="txtXpOnCompletion">
+                            </div>
+                            <div class="form-group">
+                                <label for="txtPointsOnCompletion">Pontos ao Concluir:</label>
+                                <input type="number" step="0.1" id="txtPointsOnCompletion">
+                            </div>
+                            <div class="form-group">
+                                <label for="txtCodigoAtividadeAcao">Código da Atividade (p/ Atualizar/Buscar):</label>
+                                <input type="text" id="txtCodigoAtividadeAcao">
+                            </div>
+                        </div>
+                        <div class="action-buttons-group">
+                            <button id="btnCriarAtividade" class="btn">Criar Atividade</button>
+                            <button id="btnAtualizarAtividade" class="btn">Atualizar Atividade</button>
+                            <button id="btnCarregarAtividades" class="btn">Listar Todas</button>
+                            <button id="btnBuscarAtividadePorCodigo" class="btn">Buscar por Código</button>
+                        </div>
+                    </div>
+                    <h3>Dados das Atividades</h3>
+                    <div class="data-display-section">
+                        <table id="dgAtividades">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Nome</th>
+                                    <th>Código</th>
+                                    <th>Descrição</th>
+                                    <th>XP Conclusão</th>
+                                    <th>Pontos Conclusão</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div id="matriculas-tab" class="tab-content">
+                <div class="main-content">
+                    <h2>Gerenciamento de Matrículas e Progresso</h2>
+                    <div class="matricula-form-container">
+                        <div class="input-section">
+                            <h3>Matrícula Individual</h3>
+                            <div class="form-group">
+                                <label for="txtAlunoIdMatricula">ID do Aluno (Matrícula):</label>
+                                <input type="number" id="txtAlunoIdMatricula">
+                            </div>
+                            <div class="form-group">
+                                <label for="txtAtividadeIdMatricula">ID da Atividade (Matrícula):</label>
+                                <input type="number" id="txtAtividadeIdMatricula">
+                            </div>
+                            <button id="btnCriarMatricula" class="btn">Criar Matrícula</button>
+                        </div>
+                        <div class="input-section">
+                            <h3>Matrícula em Massa</h3>
+                            <div class="form-group">
+                                <label for="txtCursoIdBulk">ID do Curso (Atividade):</label>
+                                <input type="number" id="txtCursoIdBulk">
+                            </div>
+                            <div class="form-group">
+                                <label for="txtTurmaIdBulk">Por Turma ID:</label>
+                                <input type="number" id="txtTurmaIdBulk">
+                            </div>
+                            <button id="btnBulkMatriculaTurma" class="btn">Matricular por Turma</button>
+                            <div class="form-group">
+                                <label for="txtGuildaIdBulk">Por Guilda ID:</label>
+                                <input type="number" id="txtGuildaIdBulk">
+                            </div>
+                            <button id="btnBulkMatriculaGuilda" class="btn">Matricular por Guilda</button>
+                        </div>
+                        <div class="input-section">
+                            <h3>Completar Atividade (Individual)</h3>
+                            <div class="form-group">
+                                <label for="txtMatriculaIdComplete">ID da Matrícula p/ Concluir:</label>
+                                <input type="number" id="txtMatriculaIdComplete">
+                            </div>
+                            <div class="form-group">
+                                <label for="txtScoreQuest">Score na Quest (0-100):</label>
+                                <input type="number" id="txtScoreQuest">
+                            </div>
+                            <button id="btnCompleteMatricula" class="btn">Concluir Matrícula</button>
+                        </div>
+                        <div class="input-section">
+                            <h3>Completar Atividade (Massa por Guilda)</h3>
+                            <div class="form-group">
+                                <label for="txtAtividadeIdBulkComplete">ID da Atividade:</label>
+                                <input type="number" id="txtAtividadeIdBulkComplete">
+                            </div>
+                            <div class="form-group">
+                                <label for="txtGuildaIdBulkComplete">ID da Guilda:</label>
+                                <input type="number" id="txtGuildaIdBulkComplete">
+                            </div>
+                            <div class="form-group">
+                                <label for="txtScoreBulkCompleteGuild">Score para Todos na Guilda:</label>
+                                <input type="number" id="txtScoreBulkCompleteGuild">
+                            </div>
+                            <button id="btnBulkCompleteGuilda" class="btn">Concluir p/ Guilda</button>
+                        </div>
+                        <div class="input-section">
+                            <h3>Buscar Matrículas</h3>
+                            <div class="form-group">
+                                <label for="txtNomeAlunoBuscaMatricula">Nome do Aluno:</label>
+                                <input type="text" id="txtNomeAlunoBuscaMatricula">
+                            </div>
+                            <button id="btnBuscarMatriculasPorNomeAluno" class="btn">Buscar por Nome Aluno</button>
+                            <div class="form-group">
+                                <label for="txtAlunoIdDetalhesMatricula">ID do Aluno (Detalhes):</label>
+                                <input type="number" id="txtAlunoIdDetalhesMatricula">
+                            </div>
+                            <button id="btnBuscarDetalhesMatriculaPorId" class="btn">Buscar Detalhes por ID Aluno</button>
+                            <div class="form-group">
+                                <label for="txtCodigoAtividadeAlunosMatriculados">Código da Atividade (Alunos Matriculados):</label>
+                                <input type="text" id="txtCodigoAtividadeAlunosMatriculados">
+                            </div>
+                            <button id="btnBuscarAlunosMatriculadosAtividade" class="btn">Buscar Alunos por Atividade</button>
+                        </div>
+                    </div>
+                    <h3>Dados das Matrículas</h3>
+                    <div class="data-display-section">
+                        <table id="dgMatriculas">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Aluno ID</th>
+                                    <th>Atividade ID</th>
+                                    <th>Score</th>
+                                    <th>Status</th>
+                                    <th>Aluno Nome</th>
+                                    <th>Atividade Nome</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div id="rankings-tab" class="tab-content">
+                <div class="main-content">
+                    <h2>Rankings e Históricos</h2>
+                    <div class="rankings-form-container">
+                        <div class="input-section">
+                            <h3>Leaderboards</h3>
+                            <div class="form-group-buttons">
+                                <button id="btnLeaderboardGeral" class="btn">Leaderboard Geral</button>
+                                <label for="txtTurmaIdLeaderboard">ID Turma:</label>
+                                <input type="number" id="txtTurmaIdLeaderboard">
+                            </div>
+                            <div class="form-group-buttons">
+                                <button id="btnLeaderboardTurma" class="btn">Leaderboard por Turma</button>
+                                <button id="btnLeaderboardGuilda" class="btn">Leaderboard por Guilda</button>
+                            </div>
+                            
+                            <hr style="margin: 20px 0;">
+
+                            <h3>Alunos por Guilda</h3>
+                            <div class="form-group">
+                                <label for="txtNomeGuildaAlunos">Nome da Guilda:</label>
+                                <input type="text" id="txtNomeGuildaAlunos">
+                            </div>
+                            <button id="btnAlunosPorGuilda" class="btn">Listar Alunos por Guilda</button>
+                        </div>
+
+                        <div class="input-section">
+                            <h3>Histórico de XP e Pontos</h3>
+                            <div class="form-group">
+                                <label for="txtAlunoIdHistorico">ID do Aluno:</label>
+                                <input type="number" id="txtAlunoIdHistorico">
+                            </div>
+                            <div class="form-group">
+                                <label for="txtNomeAlunoHistorico">Nome do Aluno:</label>
+                                <input type="text" id="txtNomeAlunoHistorico">
+                            </div>
+                            <button id="btnHistoricoAluno" class="btn">Histórico por Aluno</button>
+                            <div class="form-group">
+                                <label for="txtTurmaIdHistorico">ID da Turma:</label>
+                                <input type="number" id="txtTurmaIdHistorico">
+                            </div>
+                            <button id="btnHistoricoTurma" class="btn">Histórico por Turma</button>
+                        </div>
+                    </div>
+                    <h3>Dados de Rankings/Históricos</h3>
+                    <div class="data-display-section">
+                        <table id="dgLeaderboardsHistorico">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Aluno/Guilda Nome</th>
+                                    <th>XP Total</th>
+                                    <th>Nível/Turma</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer class="footer">
+        <p>© 2025 Johnatan Willow. Todos os direitos reservados.</p>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>
